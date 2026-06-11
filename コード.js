@@ -2506,3 +2506,25 @@ function fm_updateLatestMemo1(label, memo1) {
   const memo2 = existing[4] != null ? String(existing[4]) : '';
   return fm_updateMemo(label, stats.latestSeq, memo1, memo2);
 }
+
+/**
+ * 最新行のメモ１の末尾にテキストを追記（既存が空欄ならそのまま設定）。行がなければ新規追加。
+ * @param {string} label
+ * @param {string} text
+ * @return {{ ok: true, label: string, seq: number, date: string, time: string, memo1: string, memo2: string, latestSeq: number, totalRows: number }}
+ */
+function fm_appendToLatestMemo1(label, text) {
+  const addition = text != null ? String(text) : '';
+  const sheet = fm_openSheet_(label);
+  fm_ensureHeaders_(sheet);
+  const stats = fm_sheetStats_(sheet);
+  if (stats.totalRows === 0) {
+    return fm_appendMemo(label, addition, '');
+  }
+  const rowNum = fm_findRowBySeq_(sheet, stats.latestSeq);
+  const existing = sheet.getRange(rowNum, 1, 1, FM_HEADERS.length).getValues()[0];
+  const memo1 = existing[3] != null ? String(existing[3]) : '';
+  const memo2 = existing[4] != null ? String(existing[4]) : '';
+  const merged = memo1.trim() === '' ? addition : memo1 + '\n' + addition;
+  return fm_updateMemo(label, stats.latestSeq, merged, memo2);
+}

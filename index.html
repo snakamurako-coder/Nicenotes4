@@ -617,18 +617,21 @@
       cursor: pointer;
     }
     .nn-fm-nav button:disabled { opacity: 0.45; cursor: default; color: #80868b; }
-    #nn-flip-memo-label-modal {
+    #nn-flip-memo-label-modal,
+    #nn-fm-add-method-modal {
       display: none;
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.35);
-      z-index: 20000;
+      /* 部分手書きテキスト化モーダル(20000)から開かれることがあるため、その前面に出す */
+      z-index: 20010;
       align-items: center;
       justify-content: center;
       padding: 16px;
       box-sizing: border-box;
     }
-    #nn-flip-memo-label-modal.nn-show { display: flex; }
+    #nn-flip-memo-label-modal.nn-show,
+    #nn-fm-add-method-modal.nn-show { display: flex; }
     #nn-btn-place-flip-memo.nn-place-active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
 
     .nn-dock-slot[data-edge="bottom"],
@@ -1111,6 +1114,18 @@
     </div>
   </div>
 
+  <div id="nn-fm-add-method-modal" aria-modal="true" role="dialog" onclick="if (event.target === this) nnFmCloseAddMethodModal()">
+    <div role="dialog" aria-labelledby="nn-fm-add-method-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
+      <div id="nn-fm-add-method-title" style="font-weight:600;margin-bottom:8px;font-size:15px;color:#202124;">フリップメモへの追加方法</div>
+      <p id="nn-fm-add-method-desc" style="font-size:13px;color:#5f6368;margin:0 0 12px;white-space:pre-line;"></p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmAddTextRegister('new')">最新のページとして追加</button>
+        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnFmAddTextRegister('append')">最新ページのテキストに追記</button>
+        <button type="button" class="file-btn-meet" onclick="nnFmCloseAddMethodModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
   <div id="nn-partial-ink-modal" aria-modal="true" role="dialog" onclick="if (event.target === this) nnClosePartialInkModal()">
     <div class="nn-partial-ink-inner" onclick="event.stopPropagation()">
       <div style="font-weight:600;font-size:15px;color:#202124;">部分手書きテキスト化</div>
@@ -1119,6 +1134,7 @@
       <div class="nn-partial-ink-actions">
         <button type="button" class="btn-meeting-action" id="nn-partial-ink-copy">コピー</button>
         <button type="button" class="btn-meeting-action" id="nn-partial-ink-to-textbox" style="background:#1a73e8;color:#fff;border:none;">テキスト框に貼って編集</button>
+        <button type="button" class="btn-meeting-action" id="nn-partial-ink-to-flip-memo" style="background:#188038;color:#fff;border:none;">フリップメモに追加</button>
         <button type="button" class="file-btn-meet" onclick="nnClosePartialInkModal()">閉じる</button>
       </div>
     </div>
@@ -3171,6 +3187,74 @@
       redraw();
     }
 
+    /* --- 部分手書きテキスト化 → フリップメモに追加 --- */
+    var nnFmAddTextPending = null;
+
+    function nnAddPartialInkToFlipMemo() {
+      var ta = document.getElementById('nn-partial-ink-result');
+      var text = ta ? String(ta.value).trim() : '';
+      if (!text) {
+        alert('テキストが空です。');
+        return;
+      }
+      nnFmOpenLabelModal(function (label) {
+        if (!label) return;
+        nnFmAddTextPending = { label: label, text: text };
+        nnFmOpenAddMethodModal(label, text);
+      });
+    }
+
+    function nnFmOpenAddMethodModal(label, text) {
+      var modal = document.getElementById('nn-fm-add-method-modal');
+      var desc = document.getElementById('nn-fm-add-method-desc');
+      if (desc) {
+        var preview = text.length > 60 ? text.slice(0, 59) + '…' : text;
+        desc.textContent = 'ラベル「' + label + '」に以下のテキストを追加します。\n「' + preview + '」';
+      }
+      if (modal) modal.classList.add('nn-show');
+    }
+
+    function nnFmCloseAddMethodModal() {
+      var modal = document.getElementById('nn-fm-add-method-modal');
+      if (modal) modal.classList.remove('nn-show');
+      nnFmAddTextPending = null;
+    }
+
+    function nnFmAddTextRegister(mode) {
+      var pending = nnFmAddTextPending;
+      var modal = document.getElementById('nn-fm-add-method-modal');
+      if (modal) modal.classList.remove('nn-show');
+      nnFmAddTextPending = null;
+      if (!pending) return;
+      var label = pending.label;
+      if (statusDiv) statusDiv.textContent = 'フリップメモ「' + label + '」に登録中...';
+      var onDone = function (data) {
+        nnFmApplyMemoToLabelState(label, data);
+        fmLabelState[label].viewingSeq = data.seq;
+        nnFmSyncAllBoxesForLabel(label);
+        nnFmSyncFlipMemoChrome();
+        redraw();
+        nnClosePartialInkModal();
+        if (statusDiv) {
+          statusDiv.textContent =
+            mode === 'new'
+              ? 'フリップメモ「' + label + '」に新しいページとして追加しました'
+              : 'フリップメモ「' + label + '」の最新ページに追記しました';
+        }
+      };
+      if (mode === 'new') {
+        google.script.run
+          .withSuccessHandler(onDone)
+          .withFailureHandler(nnFmOnError)
+          .fm_appendMemo(label, pending.text, '');
+      } else {
+        google.script.run
+          .withSuccessHandler(onDone)
+          .withFailureHandler(nnFmOnError)
+          .fm_appendToLatestMemo1(label, pending.text);
+      }
+    }
+
     function nnRunPartialInkRecognition(poly) {
       var filtered = nnFilterStrokesInPolygon(nnCollectVisiblePageStrokes(), poly);
       if (!filtered.length) {
@@ -3218,6 +3302,11 @@
       if (tb && tb.dataset.wired !== '1') {
         tb.dataset.wired = '1';
         tb.addEventListener('click', nnCreateTextBoxFromPartialInk);
+      }
+      var fm = document.getElementById('nn-partial-ink-to-flip-memo');
+      if (fm && fm.dataset.wired !== '1') {
+        fm.dataset.wired = '1';
+        fm.addEventListener('click', nnAddPartialInkToFlipMemo);
       }
     }
 
