@@ -1,7 +1,7 @@
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
-    .setTitle('NiceNotes3 · 会議資料ワークスペース');
+    .setTitle('NiceNotes4 · 会議資料ワークスペース');
 }
 
 /**
@@ -1086,11 +1086,11 @@ const NN_PROP_SHEET_ID = 'NICENOTES_SHEET_ID';
 const NN_PROP_TASKLIST_ID = 'NICENOTES_TASKLIST_ID';
 const NN_PROP_TASKLIST_MAP = 'NICENOTES_TASKLIST_MAP';
 const NN_PROP_CALENDAR_ID = 'NICENOTES_CALENDAR_ID';
-const NN_TASKLIST_TITLE = 'NiceNotes3';
-const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes3 · ';
-const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes3 · 未分類';
+const NN_TASKLIST_TITLE = 'NiceNotes4';
+const NN_TASKLIST_TITLE_PREFIX = 'NiceNotes4 · ';
+const NN_TASKLIST_FALLBACK_NAME = 'NiceNotes4 · 未分類';
 const NN_TASKLIST_TITLE_MAX = 200;
-const NN_CALENDAR_NAME = 'NiceNotes3';
+const NN_CALENDAR_NAME = 'NiceNotes4';
 const NN_LOCK_TIMEOUT_MS = 10000;
 
 /**
@@ -1099,7 +1099,7 @@ const NN_LOCK_TIMEOUT_MS = 10000;
  */
 function nn_editorSampleTask_() {
   return {
-    title: 'NiceNotes3 test',
+    title: 'NiceNotes4 test',
     status: 'active',
     dueDate: '2026-05-20',
     startDate: '',
@@ -1156,7 +1156,7 @@ function nn_initSpreadsheet() {
   if (id) {
     ss = SpreadsheetApp.openById(id);
   } else {
-    ss = SpreadsheetApp.create('NiceNotes3 Master');
+    ss = SpreadsheetApp.create('NiceNotes4 Master');
     id = ss.getId();
     props.setProperty(NN_PROP_SHEET_ID, id);
   }
@@ -1217,7 +1217,7 @@ function nn_initSpreadsheet() {
   sheet.autoResizeColumns(1, lastCol);
 
   const url = ss.getUrl();
-  Logger.log('NiceNotes3 spreadsheet ready: ' + url);
+  Logger.log('NiceNotes4 spreadsheet ready: ' + url);
   return { ok: true, spreadsheetId: id, url: url, sheetName: NN_SHEET_NAME };
 }
 
@@ -2188,7 +2188,7 @@ function nn_batchSync(ops) {
 // --- Flip Memo (めくりメモ / スプレッドシート連携) ----------------------------
 
 const FM_PROP_BOOK_ID = 'FLIP_MEMO_BOOK';
-const FM_BOOK_TITLE = 'NiceNotes3 Flip Memo';
+const FM_BOOK_TITLE = 'NiceNotes4 Flip Memo';
 const FM_HEADERS = ['通し番号', '日付', '登録時刻', 'メモ１', 'メモ２'];
 
 /**

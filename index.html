@@ -863,7 +863,7 @@
   <div id="nn-startup-overlay" aria-label="起動メニュー">
     <div class="nn-startup-inner">
       <div id="nn-startup-main">
-        <h2>NiceNotes3</h2>
+        <h2>NiceNotes4</h2>
         <p class="nn-startup-lead">起動時の操作を選んでください</p>
         <div class="nn-startup-grid">
           <button type="button" class="nn-su-card" id="nn-su-quick-task">
@@ -1202,7 +1202,7 @@
 
   <div id="home-screen">
     <div class="home-header">
-      <h2>📁 NiceNotes3 · 会議資料ワークスペース</h2>
+      <h2>📁 NiceNotes4 · 会議資料ワークスペース</h2>
       <div class="home-header-actions">
         <button type="button" class="home-nav-btn" onclick="meetGoPdfFromHome()">PDF 注釈</button>
         <button type="button" class="home-nav-btn" onclick="meetGoTaskFromHome()">タスク</button>
@@ -1433,7 +1433,7 @@
     </div>
   </div>
 
-  <div id="nn-panel" aria-label="NiceNotes3 tasks">
+  <div id="nn-panel" aria-label="NiceNotes4 tasks">
     <div id="nn-banner" role="status">
       <span id="nn-banner-text">サーバー側のデータが更新されています。</span>
       <button type="button" onclick="nnPullServerOverwrite()">サーバーを取り込む</button>
@@ -1770,7 +1770,7 @@
     function nnSerializeFullAnnotationBackup() {
       return JSON.stringify({
         v: 3,
-        kind: 'NiceNotes3_pdf_backup',
+        kind: 'NiceNotes4_pdf_backup',
         pdfFileId: currentFileId || '',
         savedAt: new Date().toISOString(),
         shared: {
@@ -2244,6 +2244,84 @@
     var fmLabelState = {};
     var nnFmLabelModalCallback = null;
     var nnFmSaveTimer = null;
+
+    /* --- フリップメモ ローカルキャッシュ（即時表示用。正は常にスプレッドシート） --- */
+    var NN_FM_LABELS_CACHE_KEY = 'nn_fm_labels_cache_v1';
+    var NN_FM_MEMO_CACHE_KEY = 'nn_fm_memo_cache_v1';
+    var NN_FM_MEMO_CACHE_MAX = 40;
+
+    function nnFmReadLabelsCache() {
+      try {
+        var arr = JSON.parse(localStorage.getItem(NN_FM_LABELS_CACHE_KEY) || 'null');
+        return Array.isArray(arr) ? arr : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function nnFmWriteLabelsCache(labels) {
+      if (!Array.isArray(labels)) return;
+      try {
+        localStorage.setItem(NN_FM_LABELS_CACHE_KEY, JSON.stringify(labels));
+      } catch (e) {
+        /* quota 超過などは無視（キャッシュなので失われても問題ない） */
+      }
+    }
+
+    function nnFmReadMemoCacheAll() {
+      try {
+        var obj = JSON.parse(localStorage.getItem(NN_FM_MEMO_CACHE_KEY) || 'null');
+        return obj && typeof obj === 'object' ? obj : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function nnFmReadMemoCache(label) {
+      var all = nnFmReadMemoCacheAll();
+      var c = all[label];
+      return c && typeof c === 'object' ? c : null;
+    }
+
+    function nnFmWriteMemoCache(label) {
+      var st = fmLabelState[label];
+      if (!st) return;
+      var all = nnFmReadMemoCacheAll();
+      all[label] = {
+        seq: st.seq,
+        date: st.date || '',
+        time: st.time || '',
+        displayAt: st.displayAt || '',
+        memo1: st.memo1 || '',
+        memo2: st.memo2 || '',
+        latestSeq: st.latestSeq || 0,
+        totalRows: st.totalRows || 0,
+        activeTab: st.activeTab || 'memo1',
+        ts: Date.now(),
+      };
+      var keys = Object.keys(all);
+      if (keys.length > NN_FM_MEMO_CACHE_MAX) {
+        keys
+          .sort(function (a, b) {
+            return (all[a].ts || 0) - (all[b].ts || 0);
+          })
+          .slice(0, keys.length - NN_FM_MEMO_CACHE_MAX)
+          .forEach(function (k) {
+            delete all[k];
+          });
+      }
+      try {
+        localStorage.setItem(NN_FM_MEMO_CACHE_KEY, JSON.stringify(all));
+      } catch (e) {
+        /* quota 超過などは無視 */
+      }
+    }
+
+    function nnFmIsEditingLabel(label) {
+      if (!nnSelectedTextRef || !nnFmIsFlipMemoBox(nnSelectedTextRef.box)) return false;
+      if (nnFmGetLabel(nnSelectedTextRef.box) !== label) return false;
+      return !!(nnTextEditActive || nnFmSaveTimer);
+    }
     var nnTextResize = null;
     var nnInspectorPinned = false;
     var nnInspectorManualPos = null;
@@ -2398,6 +2476,7 @@
         totalRows: data.totalRows != null ? data.totalRows : 0,
         loaded: true,
       };
+      nnFmWriteMemoCache(label);
     }
 
     function nnFmGetActiveMemoText(label) {
@@ -2430,13 +2509,31 @@
         if (callback) callback(fmLabelState[label]);
         return;
       }
+      // まずローカルキャッシュ（前回表示・前回入力の内容）を即時反映し、
+      // その後バックグラウンドでスプレッドシートから最新を取得して差し替える。
+      var usedCache = false;
+      var cached = nnFmReadMemoCache(label);
+      if (cached && !fmLabelState[label]) {
+        nnFmApplyMemoToLabelState(label, cached);
+        fmLabelState[label].activeTab = cached.activeTab === 'memo2' ? 'memo2' : 'memo1';
+        nnFmSyncAllBoxesForLabel(label);
+        usedCache = true;
+        if (callback) callback(fmLabelState[label]);
+      }
       google.script.run
         .withSuccessHandler(function (data) {
+          // ユーザーがこのラベルを編集中ならローカルの内容を優先し、上書きしない
+          if (usedCache && nnFmIsEditingLabel(label)) return;
           nnFmApplyMemoToLabelState(label, data);
           nnFmSyncAllBoxesForLabel(label);
-          if (callback) callback(fmLabelState[label]);
+          if (usedCache) {
+            nnFmSyncFlipMemoChrome();
+            redraw();
+          } else if (callback) {
+            callback(fmLabelState[label]);
+          }
         })
-        .withFailureHandler(nnFmOnError)
+        .withFailureHandler(usedCache ? function () {} : nnFmOnError)
         .fm_getMemoBySeq(label);
     }
 
@@ -2457,6 +2554,7 @@
             totalRows: data.totalRows != null ? data.totalRows : 0,
             loaded: true,
           };
+          nnFmWriteMemoCache(label);
           nnFmSyncAllBoxesForLabel(label);
           if (callback) callback(fmLabelState[label]);
         })
@@ -2467,6 +2565,7 @@
     function nnFmRefreshLabelModalDropdown(labels) {
       var sel = document.getElementById('nn-fm-label-select');
       if (!sel) return;
+      var prevValue = sel.value || '';
       sel.innerHTML = '';
       if (!labels || !labels.length) {
         var o = document.createElement('option');
@@ -2481,6 +2580,7 @@
         opt.textContent = name;
         sel.appendChild(opt);
       });
+      if (prevValue && labels.indexOf(prevValue) !== -1) sel.value = prevValue;
     }
 
     function nnFmOpenLabelModal(callback) {
@@ -2489,17 +2589,18 @@
       var inp = document.getElementById('nn-fm-label-new');
       if (inp) inp.value = '';
       if (modal) modal.classList.add('nn-show');
+      // キャッシュ済みのラベル一覧を即時表示し、裏でスプレッドシートから最新を取得して更新する。
+      // （fm_listLabels はサーバー側でブック作成も保証するため fm_ensureBook の往復は不要）
+      var cached = nnFmReadLabelsCache();
+      var usedCache = !!(cached && cached.length);
+      if (usedCache) nnFmRefreshLabelModalDropdown(cached);
       google.script.run
-        .withSuccessHandler(function () {
-          google.script.run
-            .withSuccessHandler(function (labels) {
-              nnFmRefreshLabelModalDropdown(labels);
-            })
-            .withFailureHandler(nnFmOnError)
-            .fm_listLabels();
+        .withSuccessHandler(function (labels) {
+          nnFmWriteLabelsCache(labels);
+          nnFmRefreshLabelModalDropdown(labels);
         })
-        .withFailureHandler(nnFmOnError)
-        .fm_ensureBook();
+        .withFailureHandler(usedCache ? function () {} : nnFmOnError)
+        .fm_listLabels();
     }
 
     function nnFmCloseLabelModal() {
@@ -2532,7 +2633,8 @@
         return;
       }
       google.script.run
-        .withSuccessHandler(function () {
+        .withSuccessHandler(function (res) {
+          if (res && Array.isArray(res.labels)) nnFmWriteLabelsCache(res.labels);
           nnFmFinishLabelModal(name);
         })
         .withFailureHandler(nnFmOnError)
@@ -2602,6 +2704,7 @@
       var st = fmLabelState[label];
       if (!st) return;
       st.activeTab = tab === 'memo2' ? 'memo2' : 'memo1';
+      nnFmWriteMemoCache(label);
       nnFmSyncAllBoxesForLabel(label);
       nnFmSyncFlipMemoChrome();
       redraw();
@@ -2706,6 +2809,7 @@
       var val = String(field.value);
       if (st.activeTab === 'memo2') st.memo2 = val;
       else st.memo1 = val;
+      nnFmWriteMemoCache(label);
       nnFmSyncAllBoxesForLabel(label);
       nnFmScheduleSave();
       redraw();
@@ -3934,6 +4038,7 @@
 
     function nnSaveWorkspaceMetaToServer() {
       nnEnsureWorkspaceMeta();
+      nnSaveTreeCache();
       if (typeof google === 'undefined' || !google.script || !google.script.run) return;
       google.script.run
         .withFailureHandler(function (e) {
@@ -6494,6 +6599,12 @@
       window.addEventListener('keydown', nnOnKeyDownTextSelect);
       nnPdfAnnRefreshUndoUi();
       applyRoleMeet();
+      // サーバー応答を待たずに前回のフォルダツリー/クイックアクセスを即時描画しておく
+      try {
+        nnHydrateTreeFromCache();
+      } catch (eTreeCache) {
+        console.warn('tree cache hydrate', eTreeCache);
+      }
       showLoader('システムを初期設定中...');
       google.script.run
         .withSuccessHandler(function (res) {
@@ -7314,6 +7425,7 @@
     function changeFolderColor(folderId, color) {
       if (!treeData.folderColors) treeData.folderColors = {};
       treeData.folderColors[folderId] = color;
+      nnSaveTreeCache();
       renderFolders();
       google.script.run.setFolderColor(folderId, color);
     }
@@ -7693,9 +7805,41 @@
       nnSyncDupCurrentPdfPageButton();
     }
 
+    /* --- フォルダツリーのローカルキャッシュ（即時表示用。正は常に Drive/サーバー） --- */
+    var NN_TREE_CACHE_KEY = 'nn_tree_cache_v1';
+    var nnTreeRenderedOnce = false;
+
+    function nnSaveTreeCache() {
+      try {
+        localStorage.setItem(NN_TREE_CACHE_KEY, JSON.stringify(treeData));
+      } catch (e) {
+        /* quota 超過などは無視（キャッシュなので失われても問題ない） */
+      }
+    }
+
+    function nnHydrateTreeFromCache() {
+      if (nnTreeRenderedOnce) return false;
+      var data = null;
+      try {
+        data = JSON.parse(localStorage.getItem(NN_TREE_CACHE_KEY) || 'null');
+      } catch (e) {
+        data = null;
+      }
+      if (!data || !Array.isArray(data.folders)) return false;
+      nnTreeRenderedOnce = true;
+      treeData = data;
+      nnEnsureWorkspaceMeta();
+      renderFolders();
+      renderFilesMeet();
+      renderQuickAccess();
+      return true;
+    }
+
     function loadFolderTree(forceRefresh) {
       var ts = document.getElementById('tree-status');
-      if (ts) ts.textContent = 'データ取得中...';
+      // 強制更新でなければ、まず前回のキャッシュを即時表示し、裏でサーバーから最新を取得する
+      var usedCache = !forceRefresh && nnHydrateTreeFromCache();
+      if (ts) ts.textContent = usedCache ? 'キャッシュ表示中（最新を確認しています…）' : 'データ取得中...';
       if (forceRefresh) showLoader('ドライブをスキャン中... (数秒かかります)');
       google.script.run
         .withSuccessHandler(function (data) {
@@ -7703,6 +7847,8 @@
           treeData = data || { folders: [], files: [], folderColors: {} };
           if (data && data.workspaceMeta) treeData.workspaceMeta = data.workspaceMeta;
           nnEnsureWorkspaceMeta();
+          nnTreeRenderedOnce = true;
+          nnSaveTreeCache();
           var lu = treeData.lastUpdated ? new Date(treeData.lastUpdated).toLocaleString() : '';
           if (ts) ts.textContent = lu ? '最終更新: ' + lu : '';
           renderFolders();
