@@ -1118,6 +1118,15 @@
     <div role="dialog" aria-labelledby="nn-fm-add-method-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
       <div id="nn-fm-add-method-title" style="font-weight:600;margin-bottom:8px;font-size:15px;color:#202124;">フリップメモへの追加方法</div>
       <p id="nn-fm-add-method-desc" style="font-size:13px;color:#5f6368;margin:0 0 12px;white-space:pre-line;"></p>
+      <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">登録先</label>
+      <div style="display:flex;gap:18px;margin-bottom:14px;font-size:14px;color:#202124;">
+        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="nn-fm-add-target" value="memo1" checked style="margin:0;" /> メモ１
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="radio" name="nn-fm-add-target" value="memo2" style="margin:0;" /> メモ２
+        </label>
+      </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmAddTextRegister('new')">最新のページとして追加</button>
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnFmAddTextRegister('append')">最新ページのテキストに追記</button>
@@ -3211,7 +3220,14 @@
         var preview = text.length > 60 ? text.slice(0, 59) + '…' : text;
         desc.textContent = 'ラベル「' + label + '」に以下のテキストを追加します。\n「' + preview + '」';
       }
+      var defRadio = document.querySelector('input[name="nn-fm-add-target"][value="memo1"]');
+      if (defRadio) defRadio.checked = true;
       if (modal) modal.classList.add('nn-show');
+    }
+
+    function nnFmGetAddTarget() {
+      var checked = document.querySelector('input[name="nn-fm-add-target"]:checked');
+      return checked && checked.value === 'memo2' ? 'memo2' : 'memo1';
     }
 
     function nnFmCloseAddMethodModal() {
@@ -3222,6 +3238,8 @@
 
     function nnFmAddTextRegister(mode) {
       var pending = nnFmAddTextPending;
+      var target = nnFmGetAddTarget();
+      var targetName = target === 'memo2' ? 'メモ２' : 'メモ１';
       var modal = document.getElementById('nn-fm-add-method-modal');
       if (modal) modal.classList.remove('nn-show');
       nnFmAddTextPending = null;
@@ -3231,6 +3249,9 @@
       var onDone = function (data) {
         nnFmApplyMemoToLabelState(label, data);
         fmLabelState[label].viewingSeq = data.seq;
+        // 登録先のメモが表示されるようにタブを切り替えておく
+        fmLabelState[label].activeTab = target;
+        nnFmWriteMemoCache(label);
         nnFmSyncAllBoxesForLabel(label);
         nnFmSyncFlipMemoChrome();
         redraw();
@@ -3238,20 +3259,20 @@
         if (statusDiv) {
           statusDiv.textContent =
             mode === 'new'
-              ? 'フリップメモ「' + label + '」に新しいページとして追加しました'
-              : 'フリップメモ「' + label + '」の最新ページに追記しました';
+              ? 'フリップメモ「' + label + '」の新しいページ（' + targetName + '）に追加しました'
+              : 'フリップメモ「' + label + '」の最新ページ（' + targetName + '）に追記しました';
         }
       };
       if (mode === 'new') {
         google.script.run
           .withSuccessHandler(onDone)
           .withFailureHandler(nnFmOnError)
-          .fm_appendMemo(label, pending.text, '');
+          .fm_appendMemo(label, target === 'memo2' ? '' : pending.text, target === 'memo2' ? pending.text : '');
       } else {
         google.script.run
           .withSuccessHandler(onDone)
           .withFailureHandler(nnFmOnError)
-          .fm_appendToLatestMemo1(label, pending.text);
+          .fm_appendToLatestMemo(label, pending.text, target);
       }
     }
 
