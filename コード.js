@@ -2405,6 +2405,36 @@ function fm_createLabel(name) {
 }
 
 /**
+ * ラベルの全ページ（全行）を一括で返す。クライアントのローカルキャッシュ用。
+ * @param {string} label
+ * @return {{ ok: true, label: string, latestSeq: number, totalRows: number, h1: string, h2: string, memos: Array<{seq: number, date: string, time: string, displayAt: string, memo1: string, memo2: string}> }}
+ */
+function fm_getAllMemos(label) {
+  const sheet = fm_openSheet_(label);
+  fm_ensureHeaders_(sheet);
+  const stats = fm_sheetStats_(sheet);
+  const hd = fm_headings_(sheet);
+  const memos = [];
+  const lastRow = sheet.getLastRow();
+  if (stats.totalRows > 0 && lastRow > 1) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, FM_HEADERS.length).getValues();
+    rows.forEach(function (row) {
+      const m = fm_rowToMemo_(row);
+      if (m.seq) memos.push(m);
+    });
+  }
+  return {
+    ok: true,
+    label: label,
+    latestSeq: stats.latestSeq,
+    totalRows: stats.totalRows,
+    h1: hd.h1,
+    h2: hd.h2,
+    memos: memos,
+  };
+}
+
+/**
  * @param {string} label
  * @param {number=} seq 省略時は最新行
  * @return {{ ok: true, label: string, seq: number, date: string, time: string, memo1: string, memo2: string, latestSeq: number, totalRows: number }}

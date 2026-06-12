@@ -2290,7 +2290,7 @@
 
     /* --- フリップメモ ローカルキャッシュ（即時表示用。正は常にスプレッドシート） --- */
     var NN_FM_LABELS_CACHE_KEY = 'nn_fm_labels_cache_v1';
-    var NN_FM_MEMO_CACHE_KEY = 'nn_fm_memo_cache_v1';
+    var NN_FM_MEMO_CACHE_KEY = 'nn_fm_memo_cache_v2'; /* v2: ラベルごとに全ページを保持 */
     var NN_FM_MEMO_CACHE_MAX = 40;
 
     function nnFmReadLabelsCache() {
@@ -2330,13 +2330,15 @@
       var st = fmLabelState[label];
       if (!st) return;
       var all = nnFmReadMemoCacheAll();
+      var pagesArr = [];
+      if (st.pages) {
+        Object.keys(st.pages).forEach(function (k) {
+          pagesArr.push(st.pages[k]);
+        });
+      }
       all[label] = {
-        seq: st.seq,
-        date: st.date || '',
-        time: st.time || '',
-        displayAt: st.displayAt || '',
-        memo1: st.memo1 || '',
-        memo2: st.memo2 || '',
+        pages: pagesArr,
+        viewingSeq: st.viewingSeq != null ? st.viewingSeq : 0,
         latestSeq: st.latestSeq || 0,
         totalRows: st.totalRows || 0,
         activeTab: st.activeTab || 'memo1',
@@ -2505,25 +2507,117 @@
       if (statusDiv) statusDiv.textContent = 'フリップメモ: ' + msg;
     }
 
-    function nnFmApplyMemoToLabelState(label, data, keepView) {
-      var prev = fmLabelState[label] || {};
-      var viewingSeq = keepView && prev.viewingSeq != null ? prev.viewingSeq : (data.seq || data.latestSeq || 0);
-      fmLabelState[label] = {
-        viewingSeq: viewingSeq,
-        activeTab: prev.activeTab || 'memo1',
-        seq: data.seq,
+    function nnFmPageFromData(data) {
+      return {
+        seq: data.seq || 0,
         date: data.date || '',
         time: data.time || '',
         displayAt: data.displayAt != null ? String(data.displayAt) : '',
         memo1: data.memo1 != null ? String(data.memo1) : '',
         memo2: data.memo2 != null ? String(data.memo2) : '',
-        latestSeq: data.latestSeq != null ? data.latestSeq : 0,
-        totalRows: data.totalRows != null ? data.totalRows : 0,
-        h1: data.h1 != null && String(data.h1).trim() !== '' ? String(data.h1) : prev.h1 || 'メモ１',
-        h2: data.h2 != null && String(data.h2).trim() !== '' ? String(data.h2) : prev.h2 || 'メモ２',
+      };
+    }
+
+    /* pages（全ページ辞書）と表示中ページから fmLabelState[label] を組み立てる共通処理 */
+    function nnFmRebuildStateFromPages(label, pages, meta, prev, viewingSeq) {
+      var page = pages[viewingSeq] || {
+        seq: viewingSeq || 0,
+        date: '',
+        time: '',
+        displayAt: '',
+        memo1: '',
+        memo2: '',
+      };
+      fmLabelState[label] = {
+        pages: pages,
+        viewingSeq: viewingSeq || 0,
+        activeTab: prev.activeTab || 'memo1',
+        seq: page.seq,
+        date: page.date,
+        time: page.time,
+        displayAt: page.displayAt,
+        memo1: page.memo1,
+        memo2: page.memo2,
+        latestSeq: meta.latestSeq != null ? meta.latestSeq : prev.latestSeq || 0,
+        totalRows: meta.totalRows != null ? meta.totalRows : prev.totalRows || 0,
+        h1: meta.h1 != null && String(meta.h1).trim() !== '' ? String(meta.h1) : prev.h1 || 'メモ１',
+        h2: meta.h2 != null && String(meta.h2).trim() !== '' ? String(meta.h2) : prev.h2 || 'メモ２',
         loaded: true,
+        fullLoaded: !!(meta.fullLoaded || prev.fullLoaded),
       };
       nnFmWriteMemoCache(label);
+      return fmLabelState[label];
+    }
+
+    /* 単一ページのサーバーレスポンスを状態にマージする（既存ページ辞書は保持） */
+    function nnFmApplyMemoToLabelState(label, data, keepView) {
+      var prev = fmLabelState[label] || {};
+      var pages = prev.pages || {};
+      if (data.seq) {
+        pages[data.seq] = nnFmPageFromData(data);
+        // 未保存ページ（seq=0）が正式な通し番号を得たら仮ページを破棄
+        delete pages[0];
+      }
+      var viewingSeq = keepView && prev.viewingSeq != null ? prev.viewingSeq : (data.seq || data.latestSeq || 0);
+      nnFmRebuildStateFromPages(label, pages, data, prev, viewingSeq);
+    }
+
+    /* 全ページ一括レスポンス（fm_getAllMemos）を状態に反映する */
+    function nnFmApplyAllMemosToLabelState(label, data, keepView) {
+      var prev = fmLabelState[label] || {};
+      var pages = {};
+      (data.memos || []).forEach(function (m) {
+        if (m && m.seq) pages[m.seq] = nnFmPageFromData(m);
+      });
+      var viewingSeq =
+        keepView && prev.viewingSeq != null && pages[prev.viewingSeq]
+          ? prev.viewingSeq
+          : data.latestSeq || 0;
+      nnFmRebuildStateFromPages(
+        label,
+        pages,
+        { latestSeq: data.latestSeq, totalRows: data.totalRows, h1: data.h1, h2: data.h2, fullLoaded: true },
+        prev,
+        viewingSeq
+      );
+    }
+
+    /* ローカルキャッシュ（v2: 全ページ入り）から状態を復元する */
+    function nnFmHydrateLabelFromCache(label, cached) {
+      var pages = {};
+      (cached.pages || []).forEach(function (m) {
+        if (m && m.seq != null) pages[m.seq] = nnFmPageFromData(m);
+      });
+      var viewingSeq =
+        cached.viewingSeq != null && pages[cached.viewingSeq] ? cached.viewingSeq : cached.latestSeq || 0;
+      nnFmRebuildStateFromPages(
+        label,
+        pages,
+        {
+          latestSeq: cached.latestSeq,
+          totalRows: cached.totalRows,
+          h1: cached.h1,
+          h2: cached.h2,
+          fullLoaded: true,
+        },
+        { activeTab: cached.activeTab === 'memo2' ? 'memo2' : 'memo1' },
+        viewingSeq
+      );
+    }
+
+    /* ローカルに保持しているページへ表示を切り替える。なければ false */
+    function nnFmSetViewFromPage(label, seq) {
+      var st = fmLabelState[label];
+      var page = st && st.pages ? st.pages[seq] : null;
+      if (!page) return false;
+      st.viewingSeq = seq;
+      st.seq = page.seq;
+      st.date = page.date;
+      st.time = page.time;
+      st.displayAt = page.displayAt;
+      st.memo1 = page.memo1;
+      st.memo2 = page.memo2;
+      return true;
     }
 
     function nnFmHeading(label, tab) {
@@ -2558,58 +2652,52 @@
         if (callback) callback(null);
         return;
       }
-      if (fmLabelState[label] && fmLabelState[label].loaded) {
-        if (callback) callback(fmLabelState[label]);
+      var st = fmLabelState[label];
+      if (st && st.loaded && st.fullLoaded) {
+        if (callback) callback(st);
         return;
       }
-      // まずローカルキャッシュ（前回表示・前回入力の内容）を即時反映し、
-      // その後バックグラウンドでスプレッドシートから最新を取得して差し替える。
-      var usedCache = false;
-      var cached = nnFmReadMemoCache(label);
-      if (cached && !fmLabelState[label]) {
-        nnFmApplyMemoToLabelState(label, cached);
-        fmLabelState[label].activeTab = cached.activeTab === 'memo2' ? 'memo2' : 'memo1';
-        nnFmSyncAllBoxesForLabel(label);
-        usedCache = true;
-        if (callback) callback(fmLabelState[label]);
+      // まずローカルキャッシュ（前回同期した全ページ＋前回入力の内容）を即時反映し、
+      // その後バックグラウンドでスプレッドシートから全ページを取得して差し替える。
+      var hasLocal = !!(st && st.loaded);
+      if (!hasLocal) {
+        var cached = nnFmReadMemoCache(label);
+        if (cached) {
+          nnFmHydrateLabelFromCache(label, cached);
+          nnFmSyncAllBoxesForLabel(label);
+          hasLocal = true;
+        }
       }
+      if (hasLocal && callback) callback(fmLabelState[label]);
       google.script.run
         .withSuccessHandler(function (data) {
           // ユーザーがこのラベルを編集中ならローカルの内容を優先し、上書きしない
-          if (usedCache && nnFmIsEditingLabel(label)) return;
-          nnFmApplyMemoToLabelState(label, data);
+          if (hasLocal && nnFmIsEditingLabel(label)) return;
+          nnFmApplyAllMemosToLabelState(label, data, hasLocal);
           nnFmSyncAllBoxesForLabel(label);
-          if (usedCache) {
+          if (hasLocal) {
             nnFmSyncFlipMemoChrome();
             redraw();
           } else if (callback) {
             callback(fmLabelState[label]);
           }
         })
-        .withFailureHandler(usedCache ? function () {} : nnFmOnError)
-        .fm_getMemoBySeq(label);
+        .withFailureHandler(hasLocal ? function () {} : nnFmOnError)
+        .fm_getAllMemos(label);
     }
 
     function nnFmLoadMemoForLabel(label, seq, callback) {
+      // 全ページをローカルに保持しているため、通常はサーバー往復なしで即時切り替え
+      if (nnFmSetViewFromPage(label, seq)) {
+        nnFmWriteMemoCache(label);
+        nnFmSyncAllBoxesForLabel(label);
+        if (callback) callback(fmLabelState[label]);
+        return;
+      }
+      // ローカルにないページのみサーバーから取得（フォールバック）
       google.script.run
         .withSuccessHandler(function (data) {
-          var prev = fmLabelState[label] || {};
-          fmLabelState[label] = {
-            viewingSeq: data.seq,
-            activeTab: prev.activeTab || 'memo1',
-            seq: data.seq,
-            date: data.date || '',
-            time: data.time || '',
-            displayAt: data.displayAt != null ? String(data.displayAt) : '',
-            memo1: data.memo1 != null ? String(data.memo1) : '',
-            memo2: data.memo2 != null ? String(data.memo2) : '',
-            latestSeq: data.latestSeq != null ? data.latestSeq : 0,
-            totalRows: data.totalRows != null ? data.totalRows : 0,
-            h1: data.h1 != null && String(data.h1).trim() !== '' ? String(data.h1) : prev.h1 || 'メモ１',
-            h2: data.h2 != null && String(data.h2).trim() !== '' ? String(data.h2) : prev.h2 || 'メモ２',
-            loaded: true,
-          };
-          nnFmWriteMemoCache(label);
+          nnFmApplyMemoToLabelState(label, data);
           nnFmSyncAllBoxesForLabel(label);
           if (callback) callback(fmLabelState[label]);
         })
@@ -2874,6 +2962,7 @@
           nnFmApplyMemoToLabelState(label, data);
           fmLabelState[label].viewingSeq = data.seq;
           fmLabelState[label].activeTab = 'memo1';
+          nnFmWriteMemoCache(label);
           nnFmSyncAllBoxesForLabel(label);
           nnFmSyncFlipMemoChrome();
           redraw();
@@ -2902,7 +2991,9 @@
         google.script.run
           .withSuccessHandler(function (data) {
             nnFmApplyMemoToLabelState(label, data, true);
-            fmLabelState[label].viewingSeq = data.seq;
+            // 未保存ページが正式な通し番号を得たので、そのページを表示中にする
+            nnFmSetViewFromPage(label, data.seq);
+            nnFmWriteMemoCache(label);
             nnFmSyncAllBoxesForLabel(label);
             nnFmSyncFlipMemoChrome();
           })
@@ -2929,6 +3020,15 @@
       var val = String(field.value);
       if (st.activeTab === 'memo2') st.memo2 = val;
       else st.memo1 = val;
+      // ページ辞書側にも反映（未保存ページ seq=0 の場合は仮ページを作る）
+      if (!st.pages) st.pages = {};
+      var pg = st.pages[st.viewingSeq];
+      if (!pg) {
+        pg = nnFmPageFromData(st);
+        st.pages[st.viewingSeq] = pg;
+      }
+      if (st.activeTab === 'memo2') pg.memo2 = val;
+      else pg.memo1 = val;
       nnFmWriteMemoCache(label);
       nnFmSyncAllBoxesForLabel(label);
       nnFmScheduleSave();
