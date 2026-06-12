@@ -594,7 +594,8 @@
       cursor: pointer;
     }
     .nn-fm-tab.nn-fm-tab-active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
-    .nn-fm-meta { font-size: 10px; color: #5f6368; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; white-space: pre-line; line-height: 1.35; }
+    .nn-fm-meta { font-size: 10px; color: #5f6368; background: #fff; border: 1px solid #dadce0; border-radius: 4px; padding: 2px 6px; white-space: pre-line; line-height: 1.35; cursor: pointer; }
+    .nn-fm-meta:hover { border-color: #1a73e8; color: #1a73e8; }
     .nn-fm-nav {
       position: absolute;
       left: 0;
@@ -618,7 +619,8 @@
     }
     .nn-fm-nav button:disabled { opacity: 0.45; cursor: default; color: #80868b; }
     #nn-flip-memo-label-modal,
-    #nn-fm-add-method-modal {
+    #nn-fm-add-method-modal,
+    #nn-fm-headings-modal {
       display: none;
       position: fixed;
       inset: 0;
@@ -631,7 +633,8 @@
       box-sizing: border-box;
     }
     #nn-flip-memo-label-modal.nn-show,
-    #nn-fm-add-method-modal.nn-show { display: flex; }
+    #nn-fm-add-method-modal.nn-show,
+    #nn-fm-headings-modal.nn-show { display: flex; }
     #nn-btn-place-flip-memo.nn-place-active { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; font-weight: 600; }
 
     .nn-dock-slot[data-edge="bottom"],
@@ -1121,16 +1124,31 @@
       <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">登録先</label>
       <div style="display:flex;gap:18px;margin-bottom:14px;font-size:14px;color:#202124;">
         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="radio" name="nn-fm-add-target" value="memo1" checked style="margin:0;" /> メモ１
+          <input type="radio" name="nn-fm-add-target" value="memo1" checked style="margin:0;" /> <span id="nn-fm-add-target-name1">メモ１</span>
         </label>
         <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-          <input type="radio" name="nn-fm-add-target" value="memo2" style="margin:0;" /> メモ２
+          <input type="radio" name="nn-fm-add-target" value="memo2" style="margin:0;" /> <span id="nn-fm-add-target-name2">メモ２</span>
         </label>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmAddTextRegister('new')">最新のページとして追加</button>
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnFmAddTextRegister('append')">最新ページのテキストに追記</button>
         <button type="button" class="file-btn-meet" onclick="nnFmCloseAddMethodModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="nn-fm-headings-modal" aria-modal="true" role="dialog" onclick="if (event.target === this) nnFmCloseHeadingsModal()">
+    <div role="dialog" aria-labelledby="nn-fm-headings-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
+      <div id="nn-fm-headings-title" style="font-weight:600;margin-bottom:8px;font-size:15px;color:#202124;">フリップメモの見出しを変更</div>
+      <p id="nn-fm-headings-desc" style="font-size:13px;color:#5f6368;margin:0 0 12px;">タブの見出し名を変更します（スプレッドシートのヘッダー行にも反映されます）。空欄にすると既定の「メモ１」「メモ２」に戻ります。</p>
+      <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ１の見出し</label>
+      <input type="text" id="nn-fm-heading1-input" placeholder="メモ１" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:12px;" />
+      <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ２の見出し</label>
+      <input type="text" id="nn-fm-heading2-input" placeholder="メモ２" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:14px;" />
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmSaveHeadings()">保存</button>
+        <button type="button" class="file-btn-meet" onclick="nnFmCloseHeadingsModal()">キャンセル</button>
       </div>
     </div>
   </div>
@@ -2322,6 +2340,8 @@
         latestSeq: st.latestSeq || 0,
         totalRows: st.totalRows || 0,
         activeTab: st.activeTab || 'memo1',
+        h1: st.h1 || 'メモ１',
+        h2: st.h2 || 'メモ２',
         ts: Date.now(),
       };
       var keys = Object.keys(all);
@@ -2499,9 +2519,17 @@
         memo2: data.memo2 != null ? String(data.memo2) : '',
         latestSeq: data.latestSeq != null ? data.latestSeq : 0,
         totalRows: data.totalRows != null ? data.totalRows : 0,
+        h1: data.h1 != null && String(data.h1).trim() !== '' ? String(data.h1) : prev.h1 || 'メモ１',
+        h2: data.h2 != null && String(data.h2).trim() !== '' ? String(data.h2) : prev.h2 || 'メモ２',
         loaded: true,
       };
       nnFmWriteMemoCache(label);
+    }
+
+    function nnFmHeading(label, tab) {
+      var st = fmLabelState[label];
+      if (tab === 'memo2') return st && st.h2 ? st.h2 : 'メモ２';
+      return st && st.h1 ? st.h1 : 'メモ１';
     }
 
     function nnFmGetActiveMemoText(label) {
@@ -2577,6 +2605,8 @@
             memo2: data.memo2 != null ? String(data.memo2) : '',
             latestSeq: data.latestSeq != null ? data.latestSeq : 0,
             totalRows: data.totalRows != null ? data.totalRows : 0,
+            h1: data.h1 != null && String(data.h1).trim() !== '' ? String(data.h1) : prev.h1 || 'メモ１',
+            h2: data.h2 != null && String(data.h2).trim() !== '' ? String(data.h2) : prev.h2 || 'メモ２',
             loaded: true,
           };
           nnFmWriteMemoCache(label);
@@ -2703,8 +2733,14 @@
       var label = nnFmGetLabel(nnSelectedTextRef.box);
       var st = fmLabelState[label];
       chrome.classList.add('nn-flip-memo-active');
-      if (tab1) tab1.classList.toggle('nn-fm-tab-active', !st || st.activeTab !== 'memo2');
-      if (tab2) tab2.classList.toggle('nn-fm-tab-active', !!(st && st.activeTab === 'memo2'));
+      if (tab1) {
+        tab1.classList.toggle('nn-fm-tab-active', !st || st.activeTab !== 'memo2');
+        tab1.textContent = nnFmHeading(label, 'memo1');
+      }
+      if (tab2) {
+        tab2.classList.toggle('nn-fm-tab-active', !!(st && st.activeTab === 'memo2'));
+        tab2.textContent = nnFmHeading(label, 'memo2');
+      }
       if (meta && st) {
         var pos = st.seq > 0 ? st.seq + ' / ' + st.latestSeq : '（未登録）';
         var line1 = label + ' · ' + pos;
@@ -2721,6 +2757,65 @@
       if (field && st && !nnTextEditActive) {
         field.value = nnFmGetActiveMemoText(label);
       }
+    }
+
+    /* --- メモ１・メモ２の見出し変更（メタ領域クリックで設定） --- */
+    var nnFmHeadingsLabel = null;
+
+    function nnFmOpenHeadingsModal() {
+      if (!nnSelectedTextRef || !nnFmIsFlipMemoBox(nnSelectedTextRef.box)) return;
+      var label = nnFmGetLabel(nnSelectedTextRef.box);
+      nnFmHeadingsLabel = label;
+      var modal = document.getElementById('nn-fm-headings-modal');
+      var desc = document.getElementById('nn-fm-headings-desc');
+      var in1 = document.getElementById('nn-fm-heading1-input');
+      var in2 = document.getElementById('nn-fm-heading2-input');
+      if (desc) {
+        desc.textContent =
+          'ラベル「' + label + '」のタブ見出しを変更します（スプレッドシートのヘッダー行にも反映されます）。空欄にすると既定の「メモ１」「メモ２」に戻ります。';
+      }
+      if (in1) in1.value = nnFmHeading(label, 'memo1');
+      if (in2) in2.value = nnFmHeading(label, 'memo2');
+      if (modal) modal.classList.add('nn-show');
+    }
+
+    function nnFmCloseHeadingsModal() {
+      var modal = document.getElementById('nn-fm-headings-modal');
+      if (modal) modal.classList.remove('nn-show');
+      nnFmHeadingsLabel = null;
+    }
+
+    function nnFmSaveHeadings() {
+      var label = nnFmHeadingsLabel;
+      if (!label) {
+        nnFmCloseHeadingsModal();
+        return;
+      }
+      var in1 = document.getElementById('nn-fm-heading1-input');
+      var in2 = document.getElementById('nn-fm-heading2-input');
+      var h1 = in1 ? String(in1.value).trim() : '';
+      var h2 = in2 ? String(in2.value).trim() : '';
+      nnFmCloseHeadingsModal();
+      // 楽観的に即時反映し、裏でスプレッドシートのヘッダー行へ保存する
+      if (fmLabelState[label]) {
+        fmLabelState[label].h1 = h1 || 'メモ１';
+        fmLabelState[label].h2 = h2 || 'メモ２';
+        nnFmWriteMemoCache(label);
+      }
+      nnFmSyncFlipMemoChrome();
+      if (statusDiv) statusDiv.textContent = '見出しを保存中...';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          if (fmLabelState[label]) {
+            fmLabelState[label].h1 = res && res.h1 ? String(res.h1) : 'メモ１';
+            fmLabelState[label].h2 = res && res.h2 ? String(res.h2) : 'メモ２';
+            nnFmWriteMemoCache(label);
+          }
+          nnFmSyncFlipMemoChrome();
+          if (statusDiv) statusDiv.textContent = '見出しを保存しました';
+        })
+        .withFailureHandler(nnFmOnError)
+        .fm_setLabelHeadings(label, h1, h2);
     }
 
     function nnFmSelectTab(tab) {
@@ -2913,6 +3008,15 @@
           nnFmSelectTab(el.dataset.tab);
         });
       });
+      var metaEl = document.getElementById('nn-fm-meta');
+      if (metaEl && metaEl.dataset.nnFmWired !== '1') {
+        metaEl.dataset.nnFmWired = '1';
+        metaEl.title = 'クリックで見出しの設定';
+        metaEl.addEventListener('click', function (e) {
+          e.stopPropagation();
+          nnFmOpenHeadingsModal();
+        });
+      }
       var btnPrev = document.getElementById('nn-fm-prev');
       var btnNext = document.getElementById('nn-fm-next');
       if (btnPrev && btnPrev.dataset.nnFmWired !== '1') {
@@ -3213,6 +3317,13 @@
       });
     }
 
+    function nnFmHeadingFromAnySource(label, tab) {
+      if (fmLabelState[label]) return nnFmHeading(label, tab);
+      var c = nnFmReadMemoCache(label);
+      if (tab === 'memo2') return c && c.h2 ? String(c.h2) : 'メモ２';
+      return c && c.h1 ? String(c.h1) : 'メモ１';
+    }
+
     function nnFmOpenAddMethodModal(label, text) {
       var modal = document.getElementById('nn-fm-add-method-modal');
       var desc = document.getElementById('nn-fm-add-method-desc');
@@ -3220,6 +3331,10 @@
         var preview = text.length > 60 ? text.slice(0, 59) + '…' : text;
         desc.textContent = 'ラベル「' + label + '」に以下のテキストを追加します。\n「' + preview + '」';
       }
+      var name1 = document.getElementById('nn-fm-add-target-name1');
+      var name2 = document.getElementById('nn-fm-add-target-name2');
+      if (name1) name1.textContent = nnFmHeadingFromAnySource(label, 'memo1');
+      if (name2) name2.textContent = nnFmHeadingFromAnySource(label, 'memo2');
       var defRadio = document.querySelector('input[name="nn-fm-add-target"][value="memo1"]');
       if (defRadio) defRadio.checked = true;
       if (modal) modal.classList.add('nn-show');
@@ -3239,12 +3354,12 @@
     function nnFmAddTextRegister(mode) {
       var pending = nnFmAddTextPending;
       var target = nnFmGetAddTarget();
-      var targetName = target === 'memo2' ? 'メモ２' : 'メモ１';
       var modal = document.getElementById('nn-fm-add-method-modal');
       if (modal) modal.classList.remove('nn-show');
       nnFmAddTextPending = null;
       if (!pending) return;
       var label = pending.label;
+      var targetName = nnFmHeadingFromAnySource(label, target);
       if (statusDiv) statusDiv.textContent = 'フリップメモ「' + label + '」に登録中...';
       var onDone = function (data) {
         nnFmApplyMemoToLabelState(label, data);

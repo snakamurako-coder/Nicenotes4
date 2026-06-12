@@ -2294,7 +2294,10 @@ function fm_ensureHeaders_(sheet) {
   const headerRow = sheet.getRange(1, 1, 1, width).getValues()[0];
   let i;
   for (i = 0; i < FM_HEADERS.length; i++) {
-    if (headerRow[i] !== FM_HEADERS[i]) {
+    // D/E 列（メモ１・メモ２）の見出しはユーザーが変更できるため、空のときだけ既定値を入れる
+    const userEditable = i >= 3;
+    const current = headerRow[i] != null ? String(headerRow[i]).trim() : '';
+    if (userEditable ? current === '' : headerRow[i] !== FM_HEADERS[i]) {
       sheet.getRange(1, i + 1).setValue(FM_HEADERS[i]);
     }
   }
@@ -2304,6 +2307,34 @@ function fm_ensureHeaders_(sheet) {
   sheet.getRange(2, 2, lastRow - 1, 1).setNumberFormat('yyyy-mm-dd');
   sheet.getRange(2, 3, lastRow - 1, 1).setNumberFormat('hh:mm');
   return width;
+}
+
+/**
+ * ラベルシートのメモ１・メモ２の見出し（ヘッダー行 D1/E1）を返す。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @return {{ h1: string, h2: string }}
+ */
+function fm_headings_(sheet) {
+  const row = sheet.getRange(1, 4, 1, 2).getValues()[0];
+  const h1 = row[0] != null && String(row[0]).trim() !== '' ? String(row[0]).trim() : FM_HEADERS[3];
+  const h2 = row[1] != null && String(row[1]).trim() !== '' ? String(row[1]).trim() : FM_HEADERS[4];
+  return { h1: h1, h2: h2 };
+}
+
+/**
+ * ラベルシートのメモ１・メモ２の見出しを変更する。空欄は既定値（メモ１／メモ２）に戻す。
+ * @param {string} label
+ * @param {string} h1
+ * @param {string} h2
+ * @return {{ ok: true, label: string, h1: string, h2: string }}
+ */
+function fm_setLabelHeadings(label, h1, h2) {
+  const sheet = fm_openSheet_(label);
+  fm_ensureHeaders_(sheet);
+  const v1 = h1 != null && String(h1).trim() !== '' ? String(h1).trim() : FM_HEADERS[3];
+  const v2 = h2 != null && String(h2).trim() !== '' ? String(h2).trim() : FM_HEADERS[4];
+  sheet.getRange(1, 4, 1, 2).setValues([[v1, v2]]);
+  return { ok: true, label: label, h1: v1, h2: v2 };
 }
 
 /**
@@ -2382,6 +2413,7 @@ function fm_getMemoBySeq(label, seq) {
   const sheet = fm_openSheet_(label);
   fm_ensureHeaders_(sheet);
   const stats = fm_sheetStats_(sheet);
+  const hd = fm_headings_(sheet);
   if (stats.totalRows === 0) {
     return {
       ok: true,
@@ -2394,6 +2426,8 @@ function fm_getMemoBySeq(label, seq) {
       memo2: '',
       latestSeq: 0,
       totalRows: 0,
+      h1: hd.h1,
+      h2: hd.h2,
     };
   }
   let targetSeq = seq != null && seq !== '' ? Number(seq) : stats.latestSeq;
@@ -2415,6 +2449,8 @@ function fm_getMemoBySeq(label, seq) {
     memo2: memo.memo2,
     latestSeq: stats.latestSeq,
     totalRows: stats.totalRows,
+    h1: hd.h1,
+    h2: hd.h2,
   };
 }
 
@@ -2435,6 +2471,7 @@ function fm_updateMemo(label, seq, memo1, memo2) {
   const existing = sheet.getRange(rowNum, 1, 1, FM_HEADERS.length).getValues()[0];
   sheet.getRange(rowNum, 4, 1, 2).setValues([[memo1 != null ? String(memo1) : '', memo2 != null ? String(memo2) : '']]);
   const stats = fm_sheetStats_(sheet);
+  const hd = fm_headings_(sheet);
   const memo = fm_rowToMemo_(existing);
   memo.memo1 = memo1 != null ? String(memo1) : '';
   memo.memo2 = memo2 != null ? String(memo2) : '';
@@ -2449,6 +2486,8 @@ function fm_updateMemo(label, seq, memo1, memo2) {
     memo2: memo.memo2,
     latestSeq: stats.latestSeq,
     totalRows: stats.totalRows,
+    h1: hd.h1,
+    h2: hd.h2,
   };
 }
 
@@ -2473,6 +2512,7 @@ function fm_appendMemo(label, memo1, memo2) {
   sheet.getRange(appendedRow, 2).setNumberFormat('yyyy-mm-dd');
   sheet.getRange(appendedRow, 3).setNumberFormat('hh:mm');
   const newStats = fm_sheetStats_(sheet);
+  const hd = fm_headings_(sheet);
   const displayAt = fm_formatDisplayAt_(now, now);
   return {
     ok: true,
@@ -2485,6 +2525,8 @@ function fm_appendMemo(label, memo1, memo2) {
     memo2: row[4],
     latestSeq: newStats.latestSeq,
     totalRows: newStats.totalRows,
+    h1: hd.h1,
+    h2: hd.h2,
   };
 }
 
