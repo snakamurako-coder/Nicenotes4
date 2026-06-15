@@ -569,6 +569,7 @@
       user-select: none;
     }
     #nn-text-box-chrome.nn-flip-memo-active #nn-text-edit-field { height: calc(100% - 0px); }
+    #nn-text-box-chrome.nn-flip-memo-active #nn-text-edit-field:read-only { cursor: default; caret-color: transparent; }
     .nn-fm-toolbar {
       position: absolute;
       left: 0;
@@ -2097,6 +2098,7 @@
 
     function nnDrawTextBoxesToContext(ctx, boxes) {
       if (!boxes || !boxes.length) return;
+      nnValidateSelectedTextRef();
       boxes.forEach(function (tb) {
         if (!tb || tb.w < 4 || tb.h < 4) return;
         if (
@@ -2456,8 +2458,65 @@
       if (nnTextEditActive) nnSyncTextEditOverlayGeometry();
     }
 
+    function nnValidateSelectedTextRef() {
+      if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
+      var sk = nnLpCurrentStrokeKey();
+      var arr = nnSelectedTextRef.layer === 'shared' ? sharedTextByPage[sk] : localTextByPage[sk];
+      if (!arr || arr.indexOf(nnSelectedTextRef.box) < 0) {
+        nnTextEditActive = false;
+        nnSelectedTextRef = null;
+        nnTextMove = null;
+        nnTextResize = null;
+      }
+    }
+
+    function nnCommitActiveTextEdit() {
+      if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
+      var field = document.getElementById('nn-text-edit-field');
+      if (!field) return;
+      var box = nnSelectedTextRef.box;
+      var shouldSaveField = nnTextEditActive || document.activeElement === field;
+      if (shouldSaveField) {
+        if (nnFmIsFlipMemoBox(box)) {
+          var label = nnFmGetLabel(box);
+          var st = fmLabelState[label];
+          if (st) {
+            var val = String(field.value);
+            if (st.activeTab === 'memo2') st.memo2 = val;
+            else st.memo1 = val;
+            if (!st.pages) st.pages = {};
+            var pg = st.pages[st.viewingSeq];
+            if (!pg) {
+              pg = nnFmPageFromData(st);
+              st.pages[st.viewingSeq] = pg;
+            }
+            if (st.activeTab === 'memo2') pg.memo2 = val;
+            else pg.memo1 = val;
+            nnFmWriteMemoCache(label);
+            nnFmSyncAllBoxesForLabel(label);
+          }
+        } else {
+          box.text = String(field.value);
+        }
+        nnBumpStrokeTime();
+        autoSaveCurrent(true);
+      }
+      if (nnFmSaveTimer && nnFmIsFlipMemoBox(box)) {
+        clearTimeout(nnFmSaveTimer);
+        nnFmSaveTimer = null;
+        nnFmFlushSave();
+      }
+      if (nnTextEditActive) {
+        nnTextEditActive = false;
+        nnTbHistBranch = null;
+        try {
+          field.blur();
+        } catch (eBlur) {}
+      }
+    }
+
     function nnClearTextSelection() {
-      nnCloseTextEditOverlay(true);
+      nnCommitActiveTextEdit();
       nnHideTextInspector();
       nnSelectedTextRef = null;
       nnTextMove = null;
@@ -2468,11 +2527,20 @@
 
     function nnSelectTextBox(hit) {
       if (!hit || !hit.box) return;
+      var same =
+        nnSelectedTextRef &&
+        nnSelectedTextRef.box === hit.box &&
+        nnSelectedTextRef.layer === hit.layer;
+      if (!same) nnCommitActiveTextEdit();
       nnSelectedTextRef = { box: hit.box, layer: hit.layer, id: hit.box.id };
       nnInspectorPinned = false;
       nnInspectorManualPos = null;
       nnShowTextInspector();
       if (nnFmIsFlipMemoBox(hit.box)) {
+        // キャッシュから即時にクロームを表示（位置を固定したまま選択状態にする）
+        nnFmSyncFlipMemoChrome();
+        nnSyncTextBoxChrome();
+        redraw();
         nnFmEnsureLabelLoaded(nnFmGetLabel(hit.box), function () {
           nnFmSyncFlipMemoChrome();
           nnSyncTextBoxChrome();
@@ -3744,8 +3812,10 @@
       var field = document.getElementById('nn-text-edit-field');
       var frame = chrome && chrome.querySelector('.nn-tb-frame');
       if (!chrome || !pw || !frame) return;
+      nnValidateSelectedTextRef();
       if (!nnSelectedTextRef || !nnSelectedTextRef.box || !nnCanEditTextHit(nnSelectedTextRef)) {
         chrome.classList.remove('nn-show');
+        if (field) field.readOnly = false;
         return;
       }
       var box = nnSelectedTextRef.box;
@@ -3762,12 +3832,16 @@
         nnFmSyncFlipMemoChrome();
         if (field && !nnTextEditActive) {
           field.value = nnFmGetActiveMemoText(nnFmGetLabel(box));
+          field.readOnly = true;
+        } else if (field) {
+          field.readOnly = false;
         }
       } else {
         chrome.classList.remove('nn-flip-memo-active');
         if (field && !nnTextEditActive) {
           field.value = box.text != null ? String(box.text) : '';
         }
+        if (field) field.readOnly = false;
       }
       nnApplyTextEditFieldStyle(box);
     }
@@ -3800,6 +3874,7 @@
       if (!field) return;
       nnTextEditActive = true;
       nnTbHistBranch = null;
+      field.readOnly = false;
       if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
         field.value = nnFmGetActiveMemoText(nnFmGetLabel(nnSelectedTextRef.box));
       } else {
@@ -3815,7 +3890,7 @@
 
     function nnCloseTextEditOverlay(save) {
       var field = document.getElementById('nn-text-edit-field');
-      if (save && nnSelectedTextRef && nnSelectedTextRef.box && field) {
+      if (save && nnSelectedTextRef && nnSelectedTextRef.box && field && nnTextEditActive) {
         if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
           nnFmSyncEditingFromField();
           nnFmFlushSave();
@@ -4037,10 +4112,20 @@
       if (field) {
         field.addEventListener('pointerdown', function (e) {
           e.stopPropagation();
+          if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
+          if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
+            if (!nnTextEditActive) nnOpenTextEditOverlay();
+            return;
+          }
           if (!nnTextEditActive) nnOpenTextEditOverlay();
         });
         field.addEventListener('focus', function () {
-          if (!nnTextEditActive && nnSelectedTextRef) nnOpenTextEditOverlay();
+          if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
+          if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
+            if (!nnTextEditActive) nnOpenTextEditOverlay();
+            return;
+          }
+          if (!nnTextEditActive) nnOpenTextEditOverlay();
         });
         field.addEventListener('beforeinput', function (ev) {
           if (!nnTextEditActive || !nnSelectedTextRef) return;
@@ -4099,6 +4184,11 @@
             pointerId: e.pointerId,
           };
           isDrawing = true;
+          return true;
+        }
+        // フリップメモは選択のみ（位置固定）。移動はグラバー操作に限定し、タップでは文字編集を開かない。
+        if (nnFmIsFlipMemoBox(hit.box)) {
+          nnSelectTextBox(hit);
           return true;
         }
         nnSelectTextBox(hit);
@@ -4173,7 +4263,8 @@
           nnTextMove.kind === 'body' &&
           !nnTextMove.didDrag &&
           nnIsTextBoxInteractionPointer(e) &&
-          nnSelectedTextRef
+          nnSelectedTextRef &&
+          !nnFmIsFlipMemoBox(nnSelectedTextRef.box)
         ) {
           nnOpenTextEditOverlay();
         }
@@ -9401,7 +9492,7 @@
       var hit = nnHitTextBoxesAt(pt, true);
       if (!hit || !nnCanEditTextHit(hit)) return;
       nnSelectTextBox(hit);
-      nnOpenTextEditOverlay();
+      if (!nnFmIsFlipMemoBox(hit.box)) nnOpenTextEditOverlay();
     });
 
     function saveToServer() {
