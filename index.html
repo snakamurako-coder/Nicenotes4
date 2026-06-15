@@ -576,13 +576,14 @@
       position: absolute;
       left: 0;
       right: 0;
-      bottom: 100%;
-      margin-bottom: 2px;
+      bottom: 0;
+      transform: translateY(calc(-100% - 2px));
       display: none;
       flex-direction: column;
       gap: 4px;
       pointer-events: auto;
       z-index: 4;
+      min-height: 48px;
     }
     #nn-text-box-chrome.nn-flip-memo-active .nn-fm-toolbar { display: flex; }
     .nn-fm-tabs { display: flex; gap: 4px; }
@@ -2499,20 +2500,30 @@
     }
 
     function nnBoxToScreenRect(box) {
-      var pr = nnGetPageWrapperRect();
-      if (!pr || !box) return null;
+      if (!box || !drawCanvas || baseWidth <= 0 || baseHeight <= 0) return null;
+      var cr = drawCanvas.getBoundingClientRect();
+      var sx = cr.width / baseWidth;
+      var sy = cr.height / baseHeight;
       return {
-        left: pr.left + box.x * currentScale,
-        top: pr.top + box.y * currentScale,
-        width: box.w * currentScale,
-        height: box.h * currentScale,
+        left: cr.left + box.x * sx,
+        top: cr.top + box.y * sy,
+        width: box.w * sx,
+        height: box.h * sy,
       };
     }
 
     function nnScreenToBoxCoords(clientX, clientY) {
-      var pr = nnGetPageWrapperRect();
-      if (!pr) return { x: 0, y: 0 };
-      return { x: (clientX - pr.left) / currentScale, y: (clientY - pr.top) / currentScale };
+      if (!drawCanvas || baseWidth <= 0 || baseHeight <= 0) return { x: 0, y: 0 };
+      var cr = drawCanvas.getBoundingClientRect();
+      var sx = cr.width / baseWidth;
+      var sy = cr.height / baseHeight;
+      return { x: (clientX - cr.left) / sx, y: (clientY - cr.top) / sy };
+    }
+
+    function nnRefreshTextSelectionChromeLayout() {
+      if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
+      nnApplyTextChromeGeometry(nnSelectedTextRef.box);
+      if (!nnInspectorPinned) nnPositionTextInspector(nnSelectedTextRef.box);
     }
 
     function nnHitTextResizeSE(pt, box) {
@@ -2649,7 +2660,6 @@
         redraw();
         nnFmEnsureLabelLoaded(nnFmGetLabel(hit.box), function () {
           nnFmSyncFlipMemoChrome();
-          nnSyncTextBoxChrome();
           redraw();
         });
       } else {
@@ -3976,7 +3986,8 @@
       }
       nnApplyInspectorToBox(nnSelectedTextRef.box);
       redraw();
-      nnSyncTextBoxChrome();
+      var frame = document.querySelector('#nn-text-box-chrome .nn-tb-frame');
+      if (frame) nnApplyTextChromeVisual(nnSelectedTextRef.box, frame);
       if (nnTextEditActive) {
         nnApplyTextEditFieldStyle(nnSelectedTextRef.box);
       }
@@ -4007,7 +4018,9 @@
       nnLoadInspectorFromBox(nnSelectedTextRef.box);
       ins.dataset.nnInspectorApplying = '';
       ins.classList.add('nn-show');
-      nnPositionTextInspector(nnSelectedTextRef.box);
+      requestAnimationFrame(function () {
+        if (nnSelectedTextRef && nnSelectedTextRef.box) nnPositionTextInspector(nnSelectedTextRef.box);
+      });
     }
 
     function nnClampInspectorInShell(ins, left, top) {
@@ -4044,11 +4057,12 @@
       if (!sr) return;
       var margin = 10;
       var gripH = 20;
+      var fmExtra = nnFmIsFlipMemoBox(box) ? 56 : 0;
       var bw = ins.offsetWidth || 220;
       var bh = ins.offsetHeight || 200;
       var relL = sr.left - shellR.left;
       var relT = sr.top - shellR.top;
-      var boxH = sr.height + gripH;
+      var boxH = sr.height + gripH + fmExtra;
       var candidates = [
         { left: relL, top: relT + boxH + margin, name: 'below' },
         { left: relL + sr.width + margin, top: relT, name: 'right' },
@@ -4101,12 +4115,20 @@
       frame.style.boxShadow = '0 0 0 2px rgba(26,115,232,0.35)';
     }
 
+    function nnApplyTextChromeGeometry(box) {
+      var chrome = document.getElementById('nn-text-box-chrome');
+      if (!chrome || !box) return;
+      chrome.style.left = box.x + 'px';
+      chrome.style.top = box.y + 'px';
+      chrome.style.width = box.w + 'px';
+      chrome.style.height = box.h + 'px';
+    }
+
     function nnSyncTextBoxChrome() {
       var chrome = document.getElementById('nn-text-box-chrome');
-      var pw = document.getElementById('page-wrapper');
       var field = document.getElementById('nn-text-edit-field');
       var frame = chrome && chrome.querySelector('.nn-tb-frame');
-      if (!chrome || !pw || !frame) return;
+      if (!chrome || !frame) return;
       nnValidateSelectedTextRef();
       if (!nnSelectedTextRef || !nnSelectedTextRef.box || !nnCanEditTextHit(nnSelectedTextRef)) {
         chrome.classList.remove('nn-show');
@@ -4114,14 +4136,8 @@
         return;
       }
       var box = nnSelectedTextRef.box;
-      var sr = nnBoxToScreenRect(box);
-      var pr = pw.getBoundingClientRect();
-      if (!sr) return;
       chrome.classList.add('nn-show');
-      chrome.style.left = sr.left - pr.left + 'px';
-      chrome.style.top = sr.top - pr.top + 'px';
-      chrome.style.width = sr.width + 'px';
-      chrome.style.height = sr.height + 'px';
+      nnApplyTextChromeGeometry(box);
       nnApplyTextChromeVisual(box, frame);
       if (nnFmIsFlipMemoBox(box)) {
         nnFmSyncFlipMemoChrome();
@@ -5561,6 +5577,7 @@
       pal.style.display = 'none';
       fab.style.display = 'block';
       nnPositionPaletteFab();
+      nnRefreshTextSelectionChromeLayout();
       nnSavePaletteState();
     }
 
@@ -5593,6 +5610,7 @@
         nnClampPaletteInShell(pal);
       }
       nnSavePaletteState();
+      nnRefreshTextSelectionChromeLayout();
     }
 
     function nnInitFloatingPaletteDock() {
@@ -5632,6 +5650,7 @@
         setOrient(edge);
         slot.appendChild(pal);
         updateSlots();
+        nnRefreshTextSelectionChromeLayout();
       }
 
       function undock() {
@@ -5727,6 +5746,7 @@
           });
           if (edge) dockTo(edge);
           else nnClampPaletteInShell(pal, true);
+          nnRefreshTextSelectionChromeLayout();
           nnSavePaletteState();
           drag = null;
           nnEndGripDrag();
@@ -5770,6 +5790,9 @@
       window.addEventListener('resize', function () {
         nnClampPaletteInShell(pal);
         nnPositionPaletteFab();
+        if (nnSelectedTextRef && nnSelectedTextRef.box) {
+          nnRefreshTextSelectionChromeLayout();
+        }
       });
     }
     function nnLoadRealtimeSharePref() {
