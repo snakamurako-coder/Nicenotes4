@@ -2608,3 +2608,22 @@ function fm_appendToLatestMemo(label, text, target) {
   }
   return fm_updateMemo(label, stats.latestSeq, memo1, memo2);
 }
+
+/**
+ * 指定した通し番号のページ（行）を削除する。最後の1ページは削除不可。
+ * @param {string} label
+ * @param {number} seq
+ * @return {{ ok: true, label: string, latestSeq: number, totalRows: number, h1: string, h2: string, memos: Array<{seq: number, date: string, time: string, displayAt: string, memo1: string, memo2: string}> }}
+ */
+function fm_deleteMemo(label, seq) {
+  const sheet = fm_openSheet_(label);
+  fm_ensureHeaders_(sheet);
+  const targetSeq = Number(seq);
+  if (!targetSeq || isNaN(targetSeq)) throw new Error('FM_E_BAD_SEQ: 通し番号が不正です');
+  const stats = fm_sheetStats_(sheet);
+  if (stats.totalRows <= 1) throw new Error('FM_E_LAST_PAGE: 最後の1ページは削除できません');
+  const rowNum = fm_findRowBySeq_(sheet, targetSeq);
+  if (!rowNum) throw new Error('FM_E_NO_ROW: 通し番号 ' + targetSeq + ' が見つかりません');
+  sheet.deleteRow(rowNum);
+  return fm_getAllMemos(label);
+}

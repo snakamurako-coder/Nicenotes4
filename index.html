@@ -1089,29 +1089,42 @@
     </div>
   </div>
 
-  <div id="nn-dup-pdf-page-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:20000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;" onclick="if (event.target === this) nnCloseDuplicateCurrentPdfPageModal()">
-    <div role="dialog" aria-modal="true" aria-labelledby="nn-dup-pdf-page-modal-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
-      <div id="nn-dup-pdf-page-modal-title" style="font-weight:600;margin-bottom:12px;font-size:15px;color:#202124;">現在ページの複製</div>
-      <p style="font-size:13px;color:#5f6368;margin:0 0 10px 0;">付け方を選んでください。注釈のコピーはチェックで指定します（このファイルでは前回の選択を記憶します）。</p>
-      <div id="nn-dup-page-options" style="margin-bottom:14px;font-size:13px;color:#202124;display:flex;flex-direction:column;gap:10px;">
-        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
-          <input type="checkbox" id="nn-dup-opt-text" style="margin-top:3px;flex-shrink:0;" />
-          <span>テキストボックスもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標・文字列・書式で複製します。</span></span>
-        </label>
-        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
-          <input type="checkbox" id="nn-dup-opt-flipmemo" style="margin-top:3px;flex-shrink:0;" />
-          <span>フリップメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同じ座標・書式で配置。同じラベル参照のため内容は実質同期します。</span></span>
-        </label>
-        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
-          <input type="checkbox" id="nn-dup-opt-pen" style="margin-top:3px;flex-shrink:0;" />
-          <span>手書きメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標の手書きを複製します。</span></span>
-        </label>
+  <div id="nn-dup-pdf-page-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:20000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;" onclick="if (event.target === this) nnClosePageManageModal()">
+    <div role="dialog" aria-modal="true" aria-labelledby="nn-page-manage-modal-title" style="background:#fff;padding:20px;border-radius:12px;max-width:420px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
+      <div id="nn-page-manage-modal-title" style="font-weight:600;margin-bottom:12px;font-size:15px;color:#202124;">ページの追加・削除</div>
+      <div class="modal-tabs" style="margin-bottom:14px;">
+        <div class="modal-tab active" id="nn-page-manage-tab-dup" data-tab="dup" onclick="nnPageManageSwitchTab('dup')">現在開いているページを複製する。</div>
+        <div class="modal-tab" id="nn-page-manage-tab-del" data-tab="del" onclick="nnPageManageSwitchTab('del')">現在開いているページを削除する。</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnDuplicateCurrentPdfPagePick('after')">① 次のページに追加</button>
-        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnDuplicateCurrentPdfPagePick('before')">② 前のページに追加</button>
-        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#9334e6;" id="nn-dup-opt-drive" onclick="nnDuplicateCurrentPdfPagePick('drive')">③ 別のPDFデータとして複製（Driveに書き出し）</button>
-        <button type="button" class="file-btn-meet" style="margin-top:6px;" onclick="nnCloseDuplicateCurrentPdfPageModal()">キャンセル</button>
+      <div id="nn-page-manage-panel-dup">
+        <p style="font-size:13px;color:#5f6368;margin:0 0 10px 0;">付け方を選んでください。注釈のコピーはチェックで指定します（このファイルでは前回の選択を記憶します）。</p>
+        <div id="nn-dup-page-options" style="margin-bottom:14px;font-size:13px;color:#202124;display:flex;flex-direction:column;gap:10px;">
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+            <input type="checkbox" id="nn-dup-opt-text" style="margin-top:3px;flex-shrink:0;" />
+            <span>テキストボックスもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標・文字列・書式で複製します。</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+            <input type="checkbox" id="nn-dup-opt-flipmemo" style="margin-top:3px;flex-shrink:0;" />
+            <span>フリップメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同じ座標・書式で配置。同じラベル参照のため内容は実質同期します。</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+            <input type="checkbox" id="nn-dup-opt-pen" style="margin-top:3px;flex-shrink:0;" />
+            <span>手書きメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標の手書きを複製します。</span></span>
+          </label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnDuplicateCurrentPdfPagePick('after')">① 次のページに追加</button>
+          <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnDuplicateCurrentPdfPagePick('before')">② 前のページに追加</button>
+          <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#9334e6;" id="nn-dup-opt-drive" onclick="nnDuplicateCurrentPdfPagePick('drive')">③ 別のPDFデータとして複製（Driveに書き出し）</button>
+          <button type="button" class="file-btn-meet" style="margin-top:6px;" onclick="nnClosePageManageModal()">キャンセル</button>
+        </div>
+      </div>
+      <div id="nn-page-manage-panel-del" style="display:none;">
+        <p id="nn-page-manage-del-desc" style="font-size:13px;color:#5f6368;margin:0 0 14px 0;line-height:1.5;"></p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button type="button" class="btn-meeting-action" id="nn-page-manage-del-btn" style="width:100%;justify-content:center;background:#d93025;color:#fff;" onclick="nnLpDeleteCurrentLogicalPage()">このページを削除する</button>
+          <button type="button" class="file-btn-meet" onclick="nnClosePageManageModal()">キャンセル</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1153,17 +1166,30 @@
     </div>
   </div>
 
-  <div id="nn-fm-headings-modal" aria-modal="true" role="dialog" onclick="if (event.target === this) nnFmCloseHeadingsModal()">
-    <div role="dialog" aria-labelledby="nn-fm-headings-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
-      <div id="nn-fm-headings-title" style="font-weight:600;margin-bottom:8px;font-size:15px;color:#202124;">フリップメモの見出しを変更</div>
-      <p id="nn-fm-headings-desc" style="font-size:13px;color:#5f6368;margin:0 0 12px;">タブの見出し名を変更します（スプレッドシートのヘッダー行にも反映されます）。空欄にすると既定の「メモ１」「メモ２」に戻ります。</p>
-      <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ１の見出し</label>
-      <input type="text" id="nn-fm-heading1-input" placeholder="メモ１" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:12px;" />
-      <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ２の見出し</label>
-      <input type="text" id="nn-fm-heading2-input" placeholder="メモ２" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:14px;" />
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmSaveHeadings()">保存</button>
-        <button type="button" class="file-btn-meet" onclick="nnFmCloseHeadingsModal()">キャンセル</button>
+  <div id="nn-fm-headings-modal" aria-modal="true" role="dialog" onclick="if (event.target === this) nnFmCloseSettingsModal()">
+    <div role="dialog" aria-labelledby="nn-fm-settings-title" style="background:#fff;padding:20px;border-radius:12px;max-width:420px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
+      <div id="nn-fm-settings-title" style="font-weight:600;margin-bottom:12px;font-size:15px;color:#202124;">フリップメモの設定</div>
+      <div class="modal-tabs" style="margin-bottom:14px;">
+        <div class="modal-tab active" id="nn-fm-settings-tab-del" data-tab="del" onclick="nnFmSettingsSwitchTab('del')">ページの削除</div>
+        <div class="modal-tab" id="nn-fm-settings-tab-headings" data-tab="headings" onclick="nnFmSettingsSwitchTab('headings')">フリップメモの見出しを変更</div>
+      </div>
+      <div id="nn-fm-settings-panel-del">
+        <p id="nn-fm-settings-del-desc" style="font-size:13px;color:#5f6368;margin:0 0 14px;line-height:1.5;"></p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button type="button" class="btn-meeting-action" id="nn-fm-settings-del-btn" style="width:100%;justify-content:center;background:#d93025;color:#fff;" onclick="nnFmDeleteCurrentPage()">このページを削除する</button>
+          <button type="button" class="file-btn-meet" onclick="nnFmCloseSettingsModal()">キャンセル</button>
+        </div>
+      </div>
+      <div id="nn-fm-settings-panel-headings" style="display:none;">
+        <p id="nn-fm-headings-desc" style="font-size:13px;color:#5f6368;margin:0 0 12px;">タブの見出し名を変更します（スプレッドシートのヘッダー行にも反映されます）。空欄にすると既定の「メモ１」「メモ２」に戻ります。</p>
+        <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ１の見出し</label>
+        <input type="text" id="nn-fm-heading1-input" placeholder="メモ１" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:12px;" />
+        <label style="display:block;font-size:12px;color:#5f6368;margin-bottom:4px;">メモ２の見出し</label>
+        <input type="text" id="nn-fm-heading2-input" placeholder="メモ２" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #dadce0;border-radius:8px;font-size:14px;margin-bottom:14px;" />
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnFmSaveHeadings()">保存</button>
+          <button type="button" class="file-btn-meet" onclick="nnFmCloseSettingsModal()">キャンセル</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1343,8 +1369,8 @@
       <button type="button" id="page-indicator" class="page-indicator-btn" onclick="nnOpenGotoPageModal()" title="ページ番号を指定して移動">Pg 1/1</button>
       <button onclick="changePage(1)">＞</button>
     </div>
-    <div class="tool-group" id="nn-dup-pdf-page-btn-wrap" style="display:none;max-width:280px;">
-      <button type="button" class="file-btn-meet" id="nn-btn-dup-current-pdf-page" onclick="nnOpenDuplicateCurrentPdfPageModal()" title="今開いているファイルの現在ページを複製">今開いているファイルの現在ページを複製</button>
+    <div class="tool-group" id="nn-dup-pdf-page-btn-wrap" style="display:none;max-width:200px;">
+      <button type="button" class="file-btn-meet" id="nn-btn-dup-current-pdf-page" onclick="nnOpenPageManageModal()" title="ページの追加・削除">ページの追加・削除</button>
     </div>
 
     <div id="nn-toolbar-pen-source" class="tool-group" style="display:none !important;flex-wrap:wrap;max-width:420px;">
@@ -2888,6 +2914,21 @@
       });
     }
 
+    function nnFmGetSeqList(label) {
+      var st = fmLabelState[label];
+      if (!st || !st.pages) return [];
+      return Object.keys(st.pages)
+        .map(function (k) {
+          return Number(k);
+        })
+        .filter(function (s) {
+          return s > 0;
+        })
+        .sort(function (a, b) {
+          return a - b;
+        });
+    }
+
     function nnFmSyncFlipMemoChrome() {
       var chrome = document.getElementById('nn-text-box-chrome');
       var meta = document.getElementById('nn-fm-meta');
@@ -2912,15 +2953,24 @@
         tab2.textContent = nnFmHeading(label, 'memo2');
       }
       if (meta && st) {
-        var pos = st.seq > 0 ? st.seq + ' / ' + st.latestSeq : '（未登録）';
+        var seqs = nnFmGetSeqList(label);
+        var idx = seqs.indexOf(st.viewingSeq);
+        var pos =
+          st.seq > 0 && idx >= 0
+            ? idx + 1 + ' / ' + seqs.length
+            : st.seq > 0
+              ? st.seq + ' / ' + st.latestSeq
+              : '（未登録）';
         var line1 = label + ' · ' + pos;
         meta.textContent = st.displayAt ? line1 + '\n' + st.displayAt : line1;
       } else if (meta) {
         meta.textContent = label;
       }
-      if (btnPrev) btnPrev.disabled = !st || st.viewingSeq <= 1;
+      var seqsNav = st ? nnFmGetSeqList(label) : [];
+      var idxNav = st ? seqsNav.indexOf(st.viewingSeq) : -1;
+      if (btnPrev) btnPrev.disabled = !st || st.viewingSeq <= 0 || idxNav <= 0;
       if (btnNext) {
-        var onLatest = !st || st.viewingSeq >= st.latestSeq;
+        var onLatest = !st || st.viewingSeq <= 0 || idxNav < 0 || idxNav >= seqsNav.length - 1;
         btnNext.textContent = onLatest ? '新しいメモを追加' : '次のメモ →';
         btnNext.disabled = false;
       }
@@ -2929,14 +2979,64 @@
       }
     }
 
-    /* --- メモ１・メモ２の見出し変更（メタ領域クリックで設定） --- */
-    var nnFmHeadingsLabel = null;
+    /* --- フリップメモ設定（メタ領域クリックで開く） --- */
+    var nnFmSettingsLabel = null;
 
-    function nnFmOpenHeadingsModal() {
+    function nnFmSettingsSwitchTab(tab) {
+      var isDel = tab !== 'headings';
+      var tabDel = document.getElementById('nn-fm-settings-tab-del');
+      var tabHd = document.getElementById('nn-fm-settings-tab-headings');
+      var panelDel = document.getElementById('nn-fm-settings-panel-del');
+      var panelHd = document.getElementById('nn-fm-settings-panel-headings');
+      if (tabDel) tabDel.classList.toggle('active', isDel);
+      if (tabHd) tabHd.classList.toggle('active', !isDel);
+      if (panelDel) panelDel.style.display = isDel ? '' : 'none';
+      if (panelHd) panelHd.style.display = isDel ? 'none' : '';
+      if (isDel) nnFmSyncSettingsDeletePanel();
+    }
+
+    function nnFmSyncSettingsDeletePanel() {
+      var desc = document.getElementById('nn-fm-settings-del-desc');
+      var btn = document.getElementById('nn-fm-settings-del-btn');
+      var label = nnFmSettingsLabel;
+      var st = label ? fmLabelState[label] : null;
+      var seqs = label ? nnFmGetSeqList(label) : [];
+      var canDelete = !!(st && st.seq > 0 && seqs.length > 1);
+      if (desc) {
+        if (!label || !st) {
+          desc.textContent = 'フリップメモが選択されていません。';
+        } else if (!st.seq) {
+          desc.textContent =
+            '未登録のページは削除できません。内容を空にするか、別のページへ移動してください。';
+        } else if (seqs.length <= 1) {
+          desc.textContent =
+            'ラベル「' +
+            label +
+            '」のページが1枚だけのため削除できません。新しいメモを追加してから削除してください。';
+        } else {
+          var idx = seqs.indexOf(st.viewingSeq);
+          var pos = idx >= 0 ? idx + 1 + ' / ' + seqs.length : st.viewingSeq + ' / ' + st.latestSeq;
+          var when = st.displayAt ? '（' + st.displayAt + '）' : '';
+          desc.textContent =
+            'ラベル「' +
+            label +
+            '」のページ ' +
+            pos +
+            when +
+            ' を削除します。メモ１・メモ２の内容がスプレッドシートから消えます。この操作は取り消せません。';
+        }
+      }
+      if (btn) {
+        btn.disabled = !canDelete;
+        btn.style.opacity = canDelete ? '1' : '0.45';
+        btn.style.cursor = canDelete ? 'pointer' : 'not-allowed';
+      }
+    }
+
+    function nnFmOpenSettingsModal() {
       if (!nnSelectedTextRef || !nnFmIsFlipMemoBox(nnSelectedTextRef.box)) return;
       var label = nnFmGetLabel(nnSelectedTextRef.box);
-      nnFmHeadingsLabel = label;
-      var modal = document.getElementById('nn-fm-headings-modal');
+      nnFmSettingsLabel = label;
       var desc = document.getElementById('nn-fm-headings-desc');
       var in1 = document.getElementById('nn-fm-heading1-input');
       var in2 = document.getElementById('nn-fm-heading2-input');
@@ -2946,26 +3046,135 @@
       }
       if (in1) in1.value = nnFmHeading(label, 'memo1');
       if (in2) in2.value = nnFmHeading(label, 'memo2');
+      nnFmSettingsSwitchTab('del');
+      var modal = document.getElementById('nn-fm-headings-modal');
       if (modal) modal.classList.add('nn-show');
     }
 
-    function nnFmCloseHeadingsModal() {
+    function nnFmCloseSettingsModal() {
       var modal = document.getElementById('nn-fm-headings-modal');
       if (modal) modal.classList.remove('nn-show');
-      nnFmHeadingsLabel = null;
+      nnFmSettingsLabel = null;
+    }
+
+    /** @deprecated use nnFmOpenSettingsModal */
+    function nnFmOpenHeadingsModal() {
+      nnFmOpenSettingsModal();
+    }
+
+    /** @deprecated use nnFmCloseSettingsModal */
+    function nnFmCloseHeadingsModal() {
+      nnFmCloseSettingsModal();
+    }
+
+    function nnFmDeleteCurrentPage() {
+      var label = nnFmSettingsLabel;
+      if (!label) return;
+      var st = fmLabelState[label];
+      if (!st || !st.seq) {
+        alert('未登録のページは削除できません。');
+        return;
+      }
+      var seqs = nnFmGetSeqList(label);
+      if (seqs.length <= 1) {
+        alert('ページが1枚だけのため削除できません。');
+        return;
+      }
+      var idx = seqs.indexOf(st.viewingSeq);
+      var pos = idx >= 0 ? idx + 1 + ' / ' + seqs.length : st.viewingSeq;
+      var when = st.displayAt ? '（' + st.displayAt + '）' : '';
+      if (
+        !confirm(
+          'ラベル「' +
+            label +
+            '」のページ ' +
+            pos +
+            when +
+            ' を削除しますか？\n\nメモ１・メモ２の内容がスプレッドシートから消えます。この操作は取り消せません。'
+        )
+      ) {
+        return;
+      }
+      var deletedSeq = st.viewingSeq;
+      var wasViewingSeq = st.viewingSeq;
+      var memo1 = st.memo1;
+      var memo2 = st.memo2;
+      nnFmCloseSettingsModal();
+      nnFmSyncEditingFromField();
+      if (nnFmSaveTimer) {
+        clearTimeout(nnFmSaveTimer);
+        nnFmSaveTimer = null;
+      }
+      st = fmLabelState[label];
+      if (st) {
+        memo1 = st.memo1;
+        memo2 = st.memo2;
+      }
+      if (statusDiv) statusDiv.textContent = 'ページを削除中...';
+      function nnFmRunDeleteAfterSave() {
+        google.script.run
+          .withSuccessHandler(function (data) {
+            var pages = {};
+            (data.memos || []).forEach(function (m) {
+              if (m && m.seq) pages[m.seq] = nnFmPageFromData(m);
+            });
+            var remain = Object.keys(pages)
+              .map(Number)
+              .filter(function (s) {
+                return s > 0;
+              })
+              .sort(function (a, b) {
+                return a - b;
+              });
+            var newView = 0;
+            if (remain.length) {
+              if (wasViewingSeq !== deletedSeq && pages[wasViewingSeq]) {
+                newView = wasViewingSeq;
+              } else {
+                var delIdx = seqs.indexOf(deletedSeq);
+                newView = delIdx > 0 ? seqs[delIdx - 1] : remain[0];
+              }
+            }
+            var prev = fmLabelState[label] || {};
+            nnFmRebuildStateFromPages(
+              label,
+              pages,
+              {
+                latestSeq: data.latestSeq,
+                totalRows: data.totalRows,
+                h1: data.h1,
+                h2: data.h2,
+                fullLoaded: true,
+              },
+              prev,
+              newView
+            );
+            nnFmSyncAllBoxesForLabel(label);
+            nnFmSyncFlipMemoChrome();
+            redraw();
+            nnSyncTextBoxChrome();
+            if (statusDiv) statusDiv.textContent = 'ページを削除しました';
+          })
+          .withFailureHandler(nnFmOnError)
+          .fm_deleteMemo(label, deletedSeq);
+      }
+      google.script.run
+        .withSuccessHandler(nnFmRunDeleteAfterSave)
+        .withFailureHandler(nnFmOnError)
+        .fm_updateMemo(label, deletedSeq, memo1, memo2);
     }
 
     function nnFmSaveHeadings() {
-      var label = nnFmHeadingsLabel;
+      var label = nnFmSettingsLabel;
       if (!label) {
-        nnFmCloseHeadingsModal();
+        nnFmCloseSettingsModal();
         return;
       }
       var in1 = document.getElementById('nn-fm-heading1-input');
       var in2 = document.getElementById('nn-fm-heading2-input');
       var h1 = in1 ? String(in1.value).trim() : '';
       var h2 = in2 ? String(in2.value).trim() : '';
-      nnFmCloseHeadingsModal();
+      nnFmCloseSettingsModal();
       // 楽観的に即時反映し、裏でスプレッドシートのヘッダー行へ保存する
       if (fmLabelState[label]) {
         fmLabelState[label].h1 = h1 || 'メモ１';
@@ -3009,9 +3218,12 @@
       if (!nnSelectedTextRef || !nnFmIsFlipMemoBox(nnSelectedTextRef.box)) return;
       var label = nnFmGetLabel(nnSelectedTextRef.box);
       var st = fmLabelState[label];
-      if (!st || st.viewingSeq <= 1) return;
+      if (!st || st.viewingSeq <= 0) return;
+      var seqs = nnFmGetSeqList(label);
+      var idx = seqs.indexOf(st.viewingSeq);
+      if (idx <= 0) return;
       nnFmFlushSave();
-      nnFmLoadMemoForLabel(label, st.viewingSeq - 1, function () {
+      nnFmLoadMemoForLabel(label, seqs[idx - 1], function () {
         nnFmSyncFlipMemoChrome();
         redraw();
         nnSyncTextBoxChrome();
@@ -3023,12 +3235,15 @@
       var label = nnFmGetLabel(nnSelectedTextRef.box);
       var st = fmLabelState[label];
       if (!st) return;
-      if (st.viewingSeq >= st.latestSeq) {
+      var seqs = nnFmGetSeqList(label);
+      var idx = seqs.indexOf(st.viewingSeq);
+      if (idx < 0) idx = seqs.length - 1;
+      if (st.viewingSeq <= 0 || idx >= seqs.length - 1) {
         nnFmAddNewMemo();
         return;
       }
       nnFmFlushSave();
-      nnFmLoadMemoForLabel(label, st.viewingSeq + 1, function () {
+      nnFmLoadMemoForLabel(label, seqs[idx + 1], function () {
         nnFmSyncFlipMemoChrome();
         redraw();
         nnSyncTextBoxChrome();
@@ -3193,10 +3408,10 @@
       var metaEl = document.getElementById('nn-fm-meta');
       if (metaEl && metaEl.dataset.nnFmWired !== '1') {
         metaEl.dataset.nnFmWired = '1';
-        metaEl.title = 'クリックで見出しの設定';
+        metaEl.title = 'クリックでフリップメモの設定';
         metaEl.addEventListener('click', function (e) {
           e.stopPropagation();
-          nnFmOpenHeadingsModal();
+          nnFmOpenSettingsModal();
         });
       }
       var btnPrev = document.getElementById('nn-fm-prev');
@@ -4754,7 +4969,62 @@
       btn.style.opacity = org ? '0.45' : '1';
       btn.title = org
         ? '組織フォルダのファイルでは利用できません'
-        : '今開いているファイルの現在ページを複製';
+        : 'ページの追加・削除';
+    }
+
+    function nnPageManageCanUse() {
+      if (!currentFileId || (fileType !== 'pdf' && fileType !== 'image')) {
+        alert('PDFまたは画像を開いていません。');
+        return false;
+      }
+      if (fileType === 'pdf' && !pdfDocJs) {
+        alert('PDFを開いていません。');
+        return false;
+      }
+      if (fileType === 'image' && !currentImageObj) {
+        alert('画像を開いていません。');
+        return false;
+      }
+      if (legacyFolderNavActive) {
+        alert('シームレス表示内ではこの操作は利用できません。個別ファイルモードで開いてください。');
+        return false;
+      }
+      if (nnGetFolderKindForCurrentFile() === 'org') {
+        alert('組織フォルダのファイルはこの操作を利用できません。');
+        return false;
+      }
+      return true;
+    }
+
+    function nnPageManageSwitchTab(tab) {
+      var isDup = tab !== 'del';
+      var tabDup = document.getElementById('nn-page-manage-tab-dup');
+      var tabDel = document.getElementById('nn-page-manage-tab-del');
+      var panelDup = document.getElementById('nn-page-manage-panel-dup');
+      var panelDel = document.getElementById('nn-page-manage-panel-del');
+      if (tabDup) tabDup.classList.toggle('active', isDup);
+      if (tabDel) tabDel.classList.toggle('active', !isDup);
+      if (panelDup) panelDup.style.display = isDup ? '' : 'none';
+      if (panelDel) panelDel.style.display = isDup ? 'none' : '';
+      if (!isDup) nnSyncPageManageDeletePanel();
+    }
+
+    function nnSyncPageManageDeletePanel() {
+      var desc = document.getElementById('nn-page-manage-del-desc');
+      var btn = document.getElementById('nn-page-manage-del-btn');
+      var tp = Math.max(1, totalPages || 1);
+      var cp = Math.min(Math.max(1, currentPageNum || 1), tp);
+      var canDelete = tp > 1;
+      if (desc) {
+        desc.textContent = canDelete
+          ? 'ページ ' + cp + ' / ' + tp + ' の論理ページと、このページの注釈（手書き・テキスト框・フリップメモ）を削除します。PDF/画像ファイル本体は削除されません。'
+          : '論理ページが1枚だけのため削除できません。別のページを追加してから削除してください。';
+      }
+      if (btn) {
+        btn.disabled = !canDelete;
+        btn.style.opacity = canDelete ? '1' : '0.45';
+        btn.style.cursor = canDelete ? 'pointer' : 'not-allowed';
+      }
     }
 
     function nnFindFolderIdForFile(fileId) {
@@ -5584,42 +5854,85 @@
       })();
     }
 
+    function nnLpDeleteCurrentLogicalPage() {
+      return (async function () {
+        try {
+          if (!nnPageManageCanUse()) return;
+          if (fileType === 'pdf' && !pdfDocJs) return;
+          if (fileType === 'image' && !currentImageObj) return;
+          var physN = fileType === 'pdf' ? pdfDocJs.numPages : 1;
+          nnLpEnsurePlanForCurrentFile(physN);
+          var plan = treeData.workspaceMeta.fileLogicalPages[currentFileId];
+          if (!plan || !plan.order || plan.order.length <= 1) {
+            alert('論理ページが1枚だけのため削除できません。');
+            return;
+          }
+          var idx = currentPageNum - 1;
+          var curId = plan.order[idx];
+          if (!curId) return;
+          var cp = currentPageNum;
+          var tp = plan.order.length;
+          if (
+            !confirm(
+              'ページ ' +
+                cp +
+                ' / ' +
+                tp +
+                ' を削除しますか？\n\nこのページの注釈（手書き・テキスト框・フリップメモ）も削除されます。PDF/画像ファイル本体は削除されません。'
+            )
+          ) {
+            return;
+          }
+          plan.order.splice(idx, 1);
+          delete plan.sources[curId];
+          delete localStrokesByPage[curId];
+          delete sharedStrokesByPage[curId];
+          delete localTextByPage[curId];
+          delete sharedTextByPage[curId];
+          totalPages = plan.order.length;
+          if (currentPageNum > totalPages) currentPageNum = totalPages;
+          nnSaveWorkspaceMetaToServer();
+          nnClosePageManageModal();
+          nnClearTextSelection();
+          await renderPage(currentPageNum);
+          autoSaveCurrent(true);
+          savePdfSlotFromGlobals();
+          nnRememberCurrentPdfViewState();
+        } catch (err) {
+          console.error(err);
+          alert('ページの削除に失敗しました: ' + (err && err.message ? err.message : String(err)));
+        }
+      })();
+    }
+
     function nnSyncDupPageModalOptions() {
       var driveBtn = document.getElementById('nn-dup-opt-drive');
       if (driveBtn) driveBtn.style.display = fileType === 'pdf' ? '' : 'none';
     }
 
-    function nnOpenDuplicateCurrentPdfPageModal() {
-      if (!currentFileId || (fileType !== 'pdf' && fileType !== 'image')) {
-        alert('PDFまたは画像を開いていません。');
-        return;
-      }
-      if (fileType === 'pdf' && !pdfDocJs) {
-        alert('PDFを開いていません。');
-        return;
-      }
-      if (fileType === 'image' && !currentImageObj) {
-        alert('画像を開いていません。');
-        return;
-      }
-      if (legacyFolderNavActive) {
-        alert('シームレス表示内ではこの操作は利用できません。個別ファイルモードで開いてください。');
-        return;
-      }
-      if (nnGetFolderKindForCurrentFile() === 'org') {
-        alert('組織フォルダのファイルはこの操作を利用できません。');
-        return;
-      }
+    function nnOpenPageManageModal() {
+      if (!nnPageManageCanUse()) return;
       nnWireDupPagePrefInputsOnce();
       nnLoadDupPagePrefsToModal(currentFileId);
       nnSyncDupPageModalOptions();
+      nnPageManageSwitchTab('dup');
       var m = document.getElementById('nn-dup-pdf-page-modal');
       if (m) m.style.display = 'flex';
     }
 
-    function nnCloseDuplicateCurrentPdfPageModal() {
+    function nnClosePageManageModal() {
       var m = document.getElementById('nn-dup-pdf-page-modal');
       if (m) m.style.display = 'none';
+    }
+
+    /** @deprecated use nnOpenPageManageModal */
+    function nnOpenDuplicateCurrentPdfPageModal() {
+      nnOpenPageManageModal();
+    }
+
+    /** @deprecated use nnClosePageManageModal */
+    function nnCloseDuplicateCurrentPdfPageModal() {
+      nnClosePageManageModal();
     }
 
     function nnRefreshPageIndicatorDisplay(pageNum, total) {
@@ -5695,7 +6008,7 @@
         return;
       }
       if (currentFileId) nnSetDupPagePrefs(currentFileId, nnReadDupPagePrefsFromModal());
-      nnCloseDuplicateCurrentPdfPageModal();
+      nnClosePageManageModal();
       if (mode === 'after') nnLpDuplicateCurrentLogicalPage('after');
       else if (mode === 'before') nnLpDuplicateCurrentLogicalPage('before');
       else if (mode === 'drive') nnDuplicateCurrentPdfPageSaveAsNewFile();
