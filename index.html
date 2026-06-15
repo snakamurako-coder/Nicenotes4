@@ -2498,6 +2498,20 @@
       return pw.getBoundingClientRect();
     }
 
+    function nnGetCanvasScale() {
+      if (!drawCanvas || baseWidth <= 0 || baseHeight <= 0) return { sx: 1, sy: 1 };
+      var cr = drawCanvas.getBoundingClientRect();
+      return { sx: cr.width / baseWidth, sy: cr.height / baseHeight };
+    }
+
+    function nnClientToPageCoords(clientX, clientY) {
+      if (!drawCanvas || baseWidth <= 0 || baseHeight <= 0) return { x: 0, y: 0 };
+      var cr = drawCanvas.getBoundingClientRect();
+      var sx = cr.width / baseWidth;
+      var sy = cr.height / baseHeight;
+      return { x: (clientX - cr.left) / sx, y: (clientY - cr.top) / sy };
+    }
+
     function nnBoxToScreenRect(box) {
       if (!box || !drawCanvas || baseWidth <= 0 || baseHeight <= 0) return null;
       var cr = drawCanvas.getBoundingClientRect();
@@ -2512,11 +2526,7 @@
     }
 
     function nnScreenToBoxCoords(clientX, clientY) {
-      if (!drawCanvas || baseWidth <= 0 || baseHeight <= 0) return { x: 0, y: 0 };
-      var cr = drawCanvas.getBoundingClientRect();
-      var sx = cr.width / baseWidth;
-      var sy = cr.height / baseHeight;
-      return { x: (clientX - cr.left) / sx, y: (clientY - cr.top) / sy };
+      return nnClientToPageCoords(clientX, clientY);
     }
 
     function nnRefreshTextSelectionChromeLayout() {
@@ -2527,7 +2537,8 @@
 
     function nnHitTextResizeSE(pt, box) {
       if (!box) return false;
-      var hs = 16 / currentScale;
+      var sc = nnGetCanvasScale();
+      var hs = 16 / sc.sx;
       return pt.x >= box.x + box.w - hs && pt.x <= box.x + box.w + hs && pt.y >= box.y + box.h - hs && pt.y <= box.y + box.h + hs;
     }
 
@@ -9941,6 +9952,7 @@
       scrollSpacer.style.height = (baseHeight * currentScale) + 'px';
       pageWrapper.style.width = baseWidth + 'px';
       pageWrapper.style.height = baseHeight + 'px';
+      pageWrapper.style.transform = currentScale !== 1 ? 'scale(' + currentScale + ')' : '';
 
       [bgCanvas, drawCanvas].forEach(function (canvas) {
         if (!canvas) return;
@@ -10017,13 +10029,8 @@
     }
 
     function getScaledCoords(e) {
-      const rect = drawCanvas.getBoundingClientRect();
-      return {
-        x: (e.clientX - rect.left) / currentScale,
-        y: (e.clientY - rect.top) / currentScale,
-        p: e.pressure,
-        t: Date.now()
-      };
+      var pt = nnClientToPageCoords(e.clientX, e.clientY);
+      return { x: pt.x, y: pt.y, p: e.pressure, t: Date.now() };
     }
 
     function getTargetStrokesArray() {
