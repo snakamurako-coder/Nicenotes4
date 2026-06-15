@@ -1092,11 +1092,25 @@
   <div id="nn-dup-pdf-page-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:20000;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;" onclick="if (event.target === this) nnCloseDuplicateCurrentPdfPageModal()">
     <div role="dialog" aria-modal="true" aria-labelledby="nn-dup-pdf-page-modal-title" style="background:#fff;padding:20px;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">
       <div id="nn-dup-pdf-page-modal-title" style="font-weight:600;margin-bottom:12px;font-size:15px;color:#202124;">現在ページの複製</div>
-      <p style="font-size:13px;color:#5f6368;margin:0 0 14px 0;">付け方を選んでください。</p>
+      <p style="font-size:13px;color:#5f6368;margin:0 0 10px 0;">付け方を選んでください。注釈のコピーはチェックで指定します（このファイルでは前回の選択を記憶します）。</p>
+      <div id="nn-dup-page-options" style="margin-bottom:14px;font-size:13px;color:#202124;display:flex;flex-direction:column;gap:10px;">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+          <input type="checkbox" id="nn-dup-opt-text" style="margin-top:3px;flex-shrink:0;" />
+          <span>テキストボックスもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標・文字列・書式で複製します。</span></span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+          <input type="checkbox" id="nn-dup-opt-flipmemo" style="margin-top:3px;flex-shrink:0;" />
+          <span>フリップメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同じ座標・書式で配置。同じラベル参照のため内容は実質同期します。</span></span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.45;">
+          <input type="checkbox" id="nn-dup-opt-pen" style="margin-top:3px;flex-shrink:0;" />
+          <span>手書きメモもコピー<br /><span style="font-size:12px;color:#5f6368;">同期はしません。同じ座標の手書きを複製します。</span></span>
+        </label>
+      </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;" onclick="nnDuplicateCurrentPdfPagePick('after')">① 次のページに追加</button>
         <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#188038;" onclick="nnDuplicateCurrentPdfPagePick('before')">② 前のページに追加</button>
-        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#9334e6;" onclick="nnDuplicateCurrentPdfPagePick('drive')">③ 別のPDFデータとして複製（Driveに書き出し）</button>
+        <button type="button" class="btn-meeting-action" style="width:100%;justify-content:center;background:#9334e6;" id="nn-dup-opt-drive" onclick="nnDuplicateCurrentPdfPagePick('drive')">③ 別のPDFデータとして複製（Driveに書き出し）</button>
         <button type="button" class="file-btn-meet" style="margin-top:6px;" onclick="nnCloseDuplicateCurrentPdfPageModal()">キャンセル</button>
       </div>
     </div>
@@ -1330,7 +1344,7 @@
       <button onclick="changePage(1)">＞</button>
     </div>
     <div class="tool-group" id="nn-dup-pdf-page-btn-wrap" style="display:none;max-width:280px;">
-      <button type="button" class="file-btn-meet" id="nn-btn-dup-current-pdf-page" onclick="nnOpenDuplicateCurrentPdfPageModal()" title="今開いているPDFの現在ページを複製">今開いているPDFの現在ページを複製</button>
+      <button type="button" class="file-btn-meet" id="nn-btn-dup-current-pdf-page" onclick="nnOpenDuplicateCurrentPdfPageModal()" title="今開いているファイルの現在ページを複製">今開いているファイルの現在ページを複製</button>
     </div>
 
     <div id="nn-toolbar-pen-source" class="tool-group" style="display:none !important;flex-wrap:wrap;max-width:420px;">
@@ -4440,6 +4454,7 @@
           folderPdfMode: {},
           folderKind: {},
           fileLogicalPages: {},
+          fileDupPagePrefs: {},
           layout: { childrenOrder: {}, fileOrder: {}, fileDue: {} },
         };
       }
@@ -4450,6 +4465,139 @@
       if (!treeData.workspaceMeta.folderPdfMode) treeData.workspaceMeta.folderPdfMode = {};
       if (!treeData.workspaceMeta.folderKind) treeData.workspaceMeta.folderKind = {};
       if (!treeData.workspaceMeta.fileLogicalPages) treeData.workspaceMeta.fileLogicalPages = {};
+      if (!treeData.workspaceMeta.fileDupPagePrefs) treeData.workspaceMeta.fileDupPagePrefs = {};
+    }
+
+    var NN_DUP_PAGE_PREFS_LS = 'nn_dup_page_prefs_v1';
+
+    function nnDefaultDupPagePrefs() {
+      return { copyText: false, copyFlipMemo: false, copyPen: false };
+    }
+
+    function nnNormalizeDupPagePrefs(raw) {
+      var d = nnDefaultDupPagePrefs();
+      if (!raw || typeof raw !== 'object') return d;
+      return {
+        copyText: !!raw.copyText,
+        copyFlipMemo: !!raw.copyFlipMemo,
+        copyPen: !!raw.copyPen,
+      };
+    }
+
+    function nnReadDupPagePrefsLsMap() {
+      try {
+        var obj = JSON.parse(localStorage.getItem(NN_DUP_PAGE_PREFS_LS) || 'null');
+        return obj && typeof obj === 'object' ? obj : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function nnGetDupPagePrefs(fileId) {
+      if (!fileId) return nnDefaultDupPagePrefs();
+      nnEnsureWorkspaceMeta();
+      var fromMeta =
+        treeData.workspaceMeta.fileDupPagePrefs && treeData.workspaceMeta.fileDupPagePrefs[fileId];
+      if (fromMeta) return nnNormalizeDupPagePrefs(fromMeta);
+      var lsMap = nnReadDupPagePrefsLsMap();
+      if (lsMap[fileId]) return nnNormalizeDupPagePrefs(lsMap[fileId]);
+      return nnDefaultDupPagePrefs();
+    }
+
+    function nnSetDupPagePrefs(fileId, prefs) {
+      if (!fileId) return;
+      var norm = nnNormalizeDupPagePrefs(prefs);
+      nnEnsureWorkspaceMeta();
+      treeData.workspaceMeta.fileDupPagePrefs[fileId] = norm;
+      try {
+        var lsMap = nnReadDupPagePrefsLsMap();
+        lsMap[fileId] = norm;
+        localStorage.setItem(NN_DUP_PAGE_PREFS_LS, JSON.stringify(lsMap));
+      } catch (eLs) {}
+      nnSaveWorkspaceMetaToServer();
+    }
+
+    function nnReadDupPagePrefsFromModal() {
+      var t = document.getElementById('nn-dup-opt-text');
+      var f = document.getElementById('nn-dup-opt-flipmemo');
+      var p = document.getElementById('nn-dup-opt-pen');
+      return nnNormalizeDupPagePrefs({
+        copyText: !!(t && t.checked),
+        copyFlipMemo: !!(f && f.checked),
+        copyPen: !!(p && p.checked),
+      });
+    }
+
+    function nnLoadDupPagePrefsToModal(fileId) {
+      var prefs = nnGetDupPagePrefs(fileId);
+      var t = document.getElementById('nn-dup-opt-text');
+      var f = document.getElementById('nn-dup-opt-flipmemo');
+      var p = document.getElementById('nn-dup-opt-pen');
+      if (t) t.checked = !!prefs.copyText;
+      if (f) f.checked = !!prefs.copyFlipMemo;
+      if (p) p.checked = !!prefs.copyPen;
+    }
+
+    function nnWireDupPagePrefInputsOnce() {
+      var ids = ['nn-dup-opt-text', 'nn-dup-opt-flipmemo', 'nn-dup-opt-pen'];
+      ids.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el || el.dataset.nnDupWired === '1') return;
+        el.dataset.nnDupWired = '1';
+        el.addEventListener('change', function () {
+          if (currentFileId) nnSetDupPagePrefs(currentFileId, nnReadDupPagePrefsFromModal());
+        });
+      });
+    }
+
+    function nnCloneTextBoxForDup(tb) {
+      var c = nnSafeJsonClone(tb);
+      c.id = nnNewTextBoxId();
+      if (nnFmIsFlipMemoBox(c)) {
+        var label = nnFmGetLabel(c);
+        var st = fmLabelState[label];
+        if (st) c.text = nnFmGetActiveMemoText(label);
+      }
+      return c;
+    }
+
+    function nnDupCopyAnnotationsToNewPage(curId, newId, prefs) {
+      if (!localStrokesByPage[newId]) localStrokesByPage[newId] = [];
+      if (!sharedStrokesByPage[newId]) sharedStrokesByPage[newId] = [];
+      if (!localTextByPage[newId]) localTextByPage[newId] = [];
+      if (!sharedTextByPage[newId]) sharedTextByPage[newId] = [];
+
+      if (prefs.copyPen) {
+        if (localStrokesByPage[curId] && localStrokesByPage[curId].length) {
+          localStrokesByPage[newId] = nnSafeJsonClone(localStrokesByPage[curId]);
+        }
+        if (sharedStrokesByPage[curId] && sharedStrokesByPage[curId].length) {
+          sharedStrokesByPage[newId] = nnSafeJsonClone(sharedStrokesByPage[curId]);
+        }
+      }
+
+      function copyTextsFrom(srcArr, destArr) {
+        if (!srcArr || !srcArr.length) return;
+        srcArr.forEach(function (tb) {
+          if (!tb) return;
+          var isFm = nnFmIsFlipMemoBox(tb);
+          if (isFm && !prefs.copyFlipMemo) return;
+          if (!isFm && !prefs.copyText) return;
+          destArr.push(nnCloneTextBoxForDup(tb));
+        });
+      }
+
+      copyTextsFrom(localTextByPage[curId], localTextByPage[newId]);
+      copyTextsFrom(sharedTextByPage[curId], sharedTextByPage[newId]);
+    }
+
+    function nnFilterTextsForDupExport(texts, prefs) {
+      if (!texts || !texts.length) return [];
+      if (!prefs || (!prefs.copyText && !prefs.copyFlipMemo)) return [];
+      return texts.filter(function (tb) {
+        if (!tb) return false;
+        return nnFmIsFlipMemoBox(tb) ? !!prefs.copyFlipMemo : !!prefs.copyText;
+      });
     }
 
     function nnSaveWorkspaceMetaToServer() {
@@ -4591,18 +4739,22 @@
       var pdfBtn = document.getElementById('btn-mode-pdf');
       var pdfMode = pdfBtn && pdfBtn.classList.contains('active-mode');
       var homeOpen = homeScreen && homeScreen.style.display === 'flex';
+      var isPdf = fileType === 'pdf' && !!pdfDocJs;
+      var isImage = fileType === 'image' && !!currentImageObj;
       var show =
         pdfMode &&
         !homeOpen &&
         !!currentFileId &&
-        fileType === 'pdf' &&
+        (isPdf || isImage) &&
         !legacyFolderNavActive;
       wrap.style.display = show ? 'inline-flex' : 'none';
       if (!show) return;
       var org = nnGetFolderKindForCurrentFile() === 'org';
       btn.disabled = org;
       btn.style.opacity = org ? '0.45' : '1';
-      btn.title = org ? '組織フォルダのPDFでは利用できません' : '今開いているPDFの現在ページを複製';
+      btn.title = org
+        ? '組織フォルダのファイルでは利用できません'
+        : '今開いているファイルの現在ページを複製';
     }
 
     function nnFindFolderIdForFile(fileId) {
@@ -5320,7 +5472,7 @@
     }
 
     function nnLpGetLogicalIdAt(logical1Based) {
-      if (fileType !== 'pdf' || !currentFileId) return String(logical1Based);
+      if (!currentFileId || (fileType !== 'pdf' && fileType !== 'image')) return String(logical1Based);
       nnEnsureWorkspaceMeta();
       var plan = treeData.workspaceMeta.fileLogicalPages && treeData.workspaceMeta.fileLogicalPages[currentFileId];
       if (!plan || !plan.order || plan.order.length === 0) return String(logical1Based);
@@ -5367,7 +5519,8 @@
     }
 
     function nnLpEnsurePlanForCurrentFile(physicalCount) {
-      if (!currentFileId || fileType !== 'pdf' || !physicalCount) return;
+      if (!currentFileId || !physicalCount) return;
+      if (fileType !== 'pdf' && fileType !== 'image') return;
       nnEnsureWorkspaceMeta();
       var fid = currentFileId;
       var plan = treeData.workspaceMeta.fileLogicalPages[fid];
@@ -5393,10 +5546,12 @@
     function nnLpDuplicateCurrentLogicalPage(where) {
       return (async function () {
         try {
-          if (!pdfDocJs || !currentFileId || fileType !== 'pdf') return;
+          if (!currentFileId || (fileType !== 'pdf' && fileType !== 'image')) return;
+          if (fileType === 'pdf' && !pdfDocJs) return;
+          if (fileType === 'image' && !currentImageObj) return;
           if (legacyFolderNavActive) return;
           if (nnGetFolderKindForCurrentFile() === 'org') return;
-          var physN = pdfDocJs.numPages;
+          var physN = fileType === 'pdf' ? pdfDocJs.numPages : 1;
           nnLpEnsurePlanForCurrentFile(physN);
           var plan = treeData.workspaceMeta.fileLogicalPages[currentFileId];
           if (!plan || !plan.order || !plan.order.length) return;
@@ -5416,6 +5571,8 @@
           if (!sharedStrokesByPage[newId]) sharedStrokesByPage[newId] = [];
           if (!localTextByPage[newId]) localTextByPage[newId] = [];
           if (!sharedTextByPage[newId]) sharedTextByPage[newId] = [];
+          var dupPrefs = nnGetDupPagePrefs(currentFileId);
+          nnDupCopyAnnotationsToNewPage(curId, newId, dupPrefs);
           totalPages = plan.order.length;
           nnSaveWorkspaceMetaToServer();
           await renderPage(currentPageNum);
@@ -5427,19 +5584,35 @@
       })();
     }
 
+    function nnSyncDupPageModalOptions() {
+      var driveBtn = document.getElementById('nn-dup-opt-drive');
+      if (driveBtn) driveBtn.style.display = fileType === 'pdf' ? '' : 'none';
+    }
+
     function nnOpenDuplicateCurrentPdfPageModal() {
-      if (!pdfDocJs || !currentFileId || fileType !== 'pdf') {
+      if (!currentFileId || (fileType !== 'pdf' && fileType !== 'image')) {
+        alert('PDFまたは画像を開いていません。');
+        return;
+      }
+      if (fileType === 'pdf' && !pdfDocJs) {
         alert('PDFを開いていません。');
         return;
       }
+      if (fileType === 'image' && !currentImageObj) {
+        alert('画像を開いていません。');
+        return;
+      }
       if (legacyFolderNavActive) {
-        alert('シームレス表示内ではこの操作は利用できません。個別PDFモードで開いてください。');
+        alert('シームレス表示内ではこの操作は利用できません。個別ファイルモードで開いてください。');
         return;
       }
       if (nnGetFolderKindForCurrentFile() === 'org') {
-        alert('組織フォルダの PDF はこの操作を利用できません。');
+        alert('組織フォルダのファイルはこの操作を利用できません。');
         return;
       }
+      nnWireDupPagePrefInputsOnce();
+      nnLoadDupPagePrefsToModal(currentFileId);
+      nnSyncDupPageModalOptions();
       var m = document.getElementById('nn-dup-pdf-page-modal');
       if (m) m.style.display = 'flex';
     }
@@ -5517,6 +5690,11 @@
     };
 
     function nnDuplicateCurrentPdfPagePick(mode) {
+      if (mode === 'drive' && fileType !== 'pdf') {
+        alert('Drive への書き出しは PDF のみ利用できます。');
+        return;
+      }
+      if (currentFileId) nnSetDupPagePrefs(currentFileId, nnReadDupPagePrefsFromModal());
       nnCloseDuplicateCurrentPdfPageModal();
       if (mode === 'after') nnLpDuplicateCurrentLogicalPage('after');
       else if (mode === 'before') nnLpDuplicateCurrentLogicalPage('before');
@@ -5532,8 +5710,9 @@
       return btoa(str);
     }
 
-    async function nnBuildCurrentPageAnnotatedPdfUint8() {
+    async function nnBuildCurrentPageAnnotatedPdfUint8(dupPrefs) {
       if (!originalPdfBytes || !pdfDocJs || fileType !== 'pdf') return null;
+      var prefs = nnNormalizeDupPagePrefs(dupPrefs || nnGetDupPagePrefs(currentFileId));
       const { PDFDocument } = PDFLib;
       const rawBytes = nnBytesForPdfLibLoad(originalPdfBytes);
       if (!rawBytes) return null;
@@ -5555,8 +5734,14 @@
         var copiedPages = await newPdf.copyPages(srcPdf, [phys - 1]);
         newPdf.addPage(copiedPages[0]);
         var pdfPage = newPdf.getPages()[newPdf.getPageCount() - 1];
-        var pageStrokes = (sharedStrokesByPage[lid] || []).concat(localStrokesByPage[lid] || []);
-        var pageTexts = nnConcatTextBoxesDedupeById(sharedTextByPage[lid], localTextByPage[lid]);
+        var pageStrokes = [];
+        if (prefs.copyPen) {
+          pageStrokes = (sharedStrokesByPage[lid] || []).concat(localStrokesByPage[lid] || []);
+        }
+        var pageTexts = nnFilterTextsForDupExport(
+          nnConcatTextBoxesDedupeById(sharedTextByPage[lid], localTextByPage[lid]),
+          prefs
+        );
         if (pageStrokes.length || pageTexts.length) {
           var dim = await nnExportViewportSizeForPhysicalPage(phys);
           offCanvas.width = dim.ew * dpr;
@@ -5575,8 +5760,14 @@
         var copied2 = await newPdf.copyPages(srcPdf, [i - 1]);
         newPdf.addPage(copied2[0]);
         var pdfPage2 = newPdf.getPages()[newPdf.getPageCount() - 1];
-        var pageStrokes2 = (sharedStrokesByPage[String(i)] || []).concat(localStrokesByPage[String(i)] || []);
-        var pageTexts2 = nnConcatTextBoxesDedupeById(sharedTextByPage[String(i)], localTextByPage[String(i)]);
+        var pageStrokes2 = [];
+        if (prefs.copyPen) {
+          pageStrokes2 = (sharedStrokesByPage[String(i)] || []).concat(localStrokesByPage[String(i)] || []);
+        }
+        var pageTexts2 = nnFilterTextsForDupExport(
+          nnConcatTextBoxesDedupeById(sharedTextByPage[String(i)], localTextByPage[String(i)]),
+          prefs
+        );
         if (pageStrokes2.length || pageTexts2.length) {
           var dim2 = await nnExportViewportSizeForPhysicalPage(i);
           offCanvas.width = dim2.ew * dpr;
@@ -5606,7 +5797,7 @@
         }
         showLoader('現在ページのPDFを作成・保存中...');
         try {
-          var bytes = await nnBuildCurrentPageAnnotatedPdfUint8();
+          var bytes = await nnBuildCurrentPageAnnotatedPdfUint8(nnGetDupPagePrefs(currentFileId));
           if (!bytes || !bytes.length) {
             hideLoader();
             alert('PDFの生成に失敗しました。');
@@ -6845,9 +7036,9 @@
             baseWidth = tmpSlotImg.naturalWidth || tmpSlotImg.width;
             baseHeight = tmpSlotImg.naturalHeight || tmpSlotImg.height;
           }
-          totalPages = 1;
-          currentPageNum = 1;
-          await renderPage(1);
+          nnLpEnsurePlanForCurrentFile(1);
+          currentPageNum = Math.min(Math.max(1, currentPageNum), totalPages);
+          await renderPage(currentPageNum);
         } else if (fileType === 'pdf') {
           throw new Error('PDFデータを取得できませんでした。');
         } else {
@@ -8833,7 +9024,8 @@
                 });
                 if (loadGen !== __pdfLoadGeneration) return;
                 await nnApplyImageWorkingSize(tmpLoadImg, fileName, mimeType);
-                totalPages = 1;
+                nnLpEnsurePlanForCurrentFile(1);
+                currentPageNum = Math.min(Math.max(1, currentPageNum), totalPages);
               }
 
               var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
@@ -8870,6 +9062,9 @@
                 }
                 if (fileType === 'pdf' && pdfDocJs) {
                   nnLpEnsurePlanForCurrentFile(pdfDocJs.numPages);
+                  currentPageNum = Math.min(Math.max(1, currentPageNum), totalPages);
+                } else if (fileType === 'image') {
+                  nnLpEnsurePlanForCurrentFile(1);
                   currentPageNum = Math.min(Math.max(1, currentPageNum), totalPages);
                 }
                 if (!silent) {
@@ -9191,7 +9386,7 @@
 
     function nnLpGetSourcePhysicalForId(logicalId) {
       nnEnsureWorkspaceMeta();
-      if (fileType !== 'pdf' || !currentFileId) return '1';
+      if ((fileType !== 'pdf' && fileType !== 'image') || !currentFileId) return '1';
       var plan = treeData.workspaceMeta.fileLogicalPages && treeData.workspaceMeta.fileLogicalPages[currentFileId];
       if (!plan || !plan.sources || !plan.sources[logicalId]) return '1';
       return String(plan.sources[logicalId].sourcePdfPage || 1);
