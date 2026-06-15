@@ -266,6 +266,8 @@
     .nn-su-card:hover { border-color: #1a73e8; box-shadow: 0 2px 8px rgba(26,115,232,0.2); }
     .nn-su-card .nn-su-ico { font-size: 36px; line-height: 1; }
     .nn-su-card small { font-weight: 400; font-size: 12px; color: #5f6368; display: block; margin-top: 4px; }
+    .nn-su-card.nn-su-ready small { color: #188038; }
+    .nn-su-card.nn-su-loading { opacity: 0.72; cursor: wait; }
     .nn-startup-back {
       margin-bottom: 16px; padding: 8px 14px; border: 1px solid #dadce0; border-radius: 8px;
       background: #fff; cursor: pointer; font-size: 14px;
@@ -1792,7 +1794,7 @@
         nnPdfAnnResetUndoRedo();
         return;
       }
-      if (d && d.v === 2 && d.pen && typeof d.pen === 'object') {
+      if (d && (d.v === 2 || d.v === 3) && d.pen && typeof d.pen === 'object') {
         localStrokesByPage = d.pen;
         localTextByPage = d.text && typeof d.text === 'object' ? d.text : {};
       } else if (d && typeof d === 'object') {
@@ -1820,6 +1822,71 @@
 
     function nnSerializeLocalMemo() {
       return JSON.stringify({ v: 2, pen: localStrokesByPage, text: localTextByPage });
+    }
+
+    var NN_LOCAL_DRAFT_PREFIX = 'nn_local_draft_v3_';
+    var __nnDraftSaveTimer = null;
+
+    function nnLocalDraftKey(fileId) {
+      return NN_LOCAL_DRAFT_PREFIX + (fileId || '');
+    }
+
+    function nnLocalDraftKeyLegacy(baseName) {
+      return 'local_memo_' + (baseName || '');
+    }
+
+    function nnSerializeLocalDraft(fileId) {
+      return JSON.stringify({
+        v: 3,
+        fileId: fileId || '',
+        at: Date.now(),
+        pen: localStrokesByPage,
+        text: localTextByPage,
+      });
+    }
+
+    function nnReadLocalDraft(fileId, baseName) {
+      var keys = [];
+      if (fileId) keys.push(nnLocalDraftKey(fileId));
+      if (baseName) keys.push(nnLocalDraftKeyLegacy(baseName));
+      for (var i = 0; i < keys.length; i++) {
+        try {
+          var s = localStorage.getItem(keys[i]);
+          if (s) return s;
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    function nnWriteLocalDraft(fileId, baseName) {
+      if (!fileId) return;
+      try {
+        localStorage.setItem(nnLocalDraftKey(fileId), nnSerializeLocalDraft(fileId));
+        if (baseName) localStorage.setItem(nnLocalDraftKeyLegacy(baseName), nnSerializeLocalMemo());
+      } catch (e) {}
+    }
+
+    function nnScheduleDraftCacheSave() {
+      if (__nnDraftSaveTimer) clearTimeout(__nnDraftSaveTimer);
+      __nnDraftSaveTimer = setTimeout(function () {
+        __nnDraftSaveTimer = null;
+        nnFlushDraftCacheNow();
+      }, 200);
+    }
+
+    function nnFlushDraftCacheNow() {
+      if (!currentFileId || !fileName) return;
+      try {
+        savePdfSlotFromGlobals();
+      } catch (e) {
+        console.warn('nnFlushDraftCacheNow savePdfSlot', e);
+      }
+      var s = pdfSlots[pdfActiveSlot];
+      if (s && s.fileId === currentFileId) {
+        nnPdfCacheSaveFile(s).catch(function (e) {
+          console.warn('nnPdfCacheSaveFile', e);
+        });
+      }
     }
 
     function nnApplySharedAnnotationData(dataStr) {
@@ -1886,9 +1953,8 @@
       } else {
         return false;
       }
-      if (fileName) {
-        var baseName = fileName.replace(/\.[^/.]+$/, '');
-        localStorage.setItem('local_memo_' + baseName, nnSerializeLocalMemo());
+      if (fileName && currentFileId) {
+        nnWriteLocalDraft(currentFileId, fileName.replace(/\.[^/.]+$/, ''));
       }
       nnPdfAnnResetUndoRedo();
       return true;
@@ -6348,6 +6414,96 @@
     }
     var pdfSlots = [nnEmptyPdfSlot(), nnEmptyPdfSlot(), nnEmptyPdfSlot()];
     var __startupWarmPromise = null;
+    var nnPdfCacheDb = null;
+
+    function nnEnsurePdfCacheDb() {
+      if (nnPdfCacheDb) return nnPdfCacheDb;
+      if (typeof Dexie === 'undefined') return null;
+      nnPdfCacheDb = new Dexie('NiceNotesPdfCache');
+      nnPdfCacheDb.version(1).stores({ fileCache: 'fileId, lastOpenedAt' });
+      return nnPdfCacheDb;
+    }
+
+    function nnSlotHasAnnotationData(s) {
+      if (!s) return false;
+      return (
+        nnHasAnyStrokes(s.localStrokesByPage) ||
+        nnTextMapNonEmpty(s.localTextByPage) ||
+        nnHasAnyStrokes(s.sharedStrokesByPage) ||
+        nnTextMapNonEmpty(s.sharedTextByPage)
+      );
+    }
+
+    async function nnPdfCacheSaveFile(s) {
+      if (!s || !s.fileId) return;
+      if (!nnSlotHasReadableCache(s) && !nnSlotHasAnnotationData(s)) return;
+      var db = nnEnsurePdfCacheDb();
+      if (!db) return;
+      try {
+        await db.open();
+        await db.fileCache.put({
+          fileId: s.fileId,
+          fileName: s.fileName,
+          fileType: s.fileType,
+          folderId: s.folderId,
+          originalPdfBytes: s.originalPdfBytes || null,
+          imageDataUrl: s.imageDataUrl || '',
+          localStrokesByPage: s.localStrokesByPage || {},
+          sharedStrokesByPage: s.sharedStrokesByPage || {},
+          localTextByPage: s.localTextByPage || {},
+          sharedTextByPage: s.sharedTextByPage || {},
+          currentPageNum: s.currentPageNum,
+          currentScale: s.currentScale,
+          scrollLeft: s.scrollLeft,
+          scrollTop: s.scrollTop,
+          lastOpenedAt: s.lastOpenedAt || Date.now(),
+          cachedAt: Date.now(),
+        });
+      } catch (e) {
+        console.warn('nnPdfCacheSaveFile', e);
+      }
+    }
+
+    async function nnPdfCacheLoadToSlot(slotIdx) {
+      var s = pdfSlots[slotIdx];
+      if (!s || !s.fileId || nnSlotHasReadableCache(s)) return false;
+      var db = nnEnsurePdfCacheDb();
+      if (!db) return false;
+      try {
+        await db.open();
+        var row = await db.fileCache.get(s.fileId);
+        if (!row) return false;
+        if (row.originalPdfBytes) {
+          try {
+            if (row.originalPdfBytes.byteLength > 0) s.originalPdfBytes = row.originalPdfBytes;
+          } catch (eB) {}
+        }
+        if (row.imageDataUrl) s.imageDataUrl = row.imageDataUrl;
+        if (row.localStrokesByPage) s.localStrokesByPage = row.localStrokesByPage;
+        if (row.sharedStrokesByPage) s.sharedStrokesByPage = row.sharedStrokesByPage;
+        if (row.localTextByPage) s.localTextByPage = row.localTextByPage;
+        if (row.sharedTextByPage) s.sharedTextByPage = row.sharedTextByPage;
+        if (row.currentPageNum > 0) s.currentPageNum = row.currentPageNum;
+        if (row.currentScale > 0) s.currentScale = row.currentScale;
+        s.scrollLeft = row.scrollLeft || 0;
+        s.scrollTop = row.scrollTop || 0;
+        return nnSlotHasReadableCache(s);
+      } catch (e) {
+        console.warn('nnPdfCacheLoadToSlot', e);
+        return false;
+      }
+    }
+
+    async function nnPdfCacheHydrateAllSlots() {
+      var order = nnGetSlotOrderByRecency();
+      var jobs = [];
+      for (var i = 0; i < order.length; i++) jobs.push(nnPdfCacheLoadToSlot(order[i]));
+      await Promise.all(jobs);
+    }
+
+    function nnAwaitStartupWarm() {
+      return __startupWarmPromise || Promise.resolve();
+    }
 
     function nnClonePdfBytes(buf) {
       if (!buf) return null;
@@ -6666,9 +6822,10 @@
 
     function nnPreloadSlotInBackground(slotIdx) {
       var s = pdfSlots[slotIdx];
-      if (!s || !s.fileId || s.originalPdfBytes) return Promise.resolve();
+      if (!s || !s.fileId || nnSlotHasReadableCache(s)) return Promise.resolve();
       var fileId = s.fileId;
       var baseName = (s.fileName || 'document.pdf').replace(/\.[^/.]+$/, '');
+      var isImage = s.fileType === 'image';
       return new Promise(function (resolve) {
         google.script.run
           .withFailureHandler(function () {
@@ -6680,10 +6837,16 @@
                 if (b64re && typeof b64re === 'object' && b64re.error) return;
                 if (typeof b64re !== 'string' || !b64re.length) return;
                 if (pdfSlots[slotIdx].fileId !== fileId) return;
-                var bstr = window.atob(b64re);
-                var uarr = new Uint8Array(bstr.length);
-                for (var ir = 0; ir < bstr.length; ir++) uarr[ir] = bstr.charCodeAt(ir);
-                pdfSlots[slotIdx].originalPdfBytes = uarr.buffer;
+                if (isImage) {
+                  var extImg = (s.fileName || '').split('.').pop().toLowerCase();
+                  var mimeImg = extImg === 'png' ? 'image/png' : 'image/jpeg';
+                  pdfSlots[slotIdx].imageDataUrl = 'data:' + mimeImg + ';base64,' + b64re;
+                } else {
+                  var bstr = window.atob(b64re);
+                  var uarr = new Uint8Array(bstr.length);
+                  for (var ir = 0; ir < bstr.length; ir++) uarr[ir] = bstr.charCodeAt(ir);
+                  pdfSlots[slotIdx].originalPdfBytes = uarr.buffer;
+                }
                 var neighborRes = await nnLoadNeighborBackupPromise(
                   fileId,
                   s.fileName || 'document.pdf',
@@ -6712,11 +6875,11 @@
                   if (annRes && annRes.success && annRes.data) {
                     nnApplyAnnotationPayloadToSlot(pdfSlots[slotIdx], annRes.data);
                   }
-                  var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
+                  var savedLocalMemo = nnReadLocalDraft(fileId, baseName);
                   if (savedLocalMemo) {
                     try {
                       var ld = JSON.parse(savedLocalMemo);
-                      if (ld && ld.v === 2 && ld.pen) {
+                      if (ld && (ld.v === 2 || ld.v === 3) && ld.pen) {
                         pdfSlots[slotIdx].localStrokesByPage = ld.pen;
                         pdfSlots[slotIdx].localTextByPage = ld.text && typeof ld.text === 'object' ? ld.text : {};
                       } else if (ld && typeof ld === 'object') {
@@ -6726,6 +6889,7 @@
                   }
                 }
                 if (pdfSlots[slotIdx].fileId !== fileId) return;
+                await nnPdfCacheSaveFile(pdfSlots[slotIdx]);
               } catch (e) {
                 console.warn('nnPreloadSlotInBackground', e);
               } finally {
@@ -6759,18 +6923,29 @@
       nnLoadPdfSessionMeta();
       nnMigrateLegacyLastOpenedToSlots();
       nnUpdatePdfSlotTabButtons();
-      var jobs = [];
-      for (var i = 0; i < NN_PDF_SLOT_COUNT; i++) jobs.push(nnPreloadSlotInBackground(i));
-      if (typeof window.nnPhase3Init === 'function') {
-        jobs.push(
-          window.nnPhase3Init().catch(function (e) {
-            console.warn('nnPhase3Init preload', e);
-          })
-        );
-      } else {
-        jobs.push(Promise.resolve());
-      }
-      __startupWarmPromise = Promise.all(jobs);
+      __startupWarmPromise = (async function () {
+        await nnPdfCacheHydrateAllSlots();
+        var order = nnGetSlotOrderByRecency();
+        var jobs = [];
+        for (var i = 0; i < order.length; i++) jobs.push(nnPreloadSlotInBackground(order[i]));
+        if (typeof window.nnPhase3Init === 'function') {
+          jobs.push(
+            window.nnPhase3Init().catch(function (e) {
+              console.warn('nnPhase3Init preload', e);
+            })
+          );
+        }
+        await Promise.all(jobs);
+        nnMarkPdfWarmReady();
+      })();
+    }
+
+    function nnMarkPdfWarmReady() {
+      var card = document.getElementById('nn-su-pdf-work');
+      if (!card) return;
+      card.classList.add('nn-su-ready');
+      var hint = card.querySelector('small');
+      if (hint) hint.textContent = '準備完了（タップで即時起動）';
     }
 
     var NN_PDF_SLOTS_META_KEY = 'nn_pdf_slots_meta';
@@ -7234,6 +7409,12 @@
       nnRememberCurrentPdfViewState();
       nnUpdatePdfSlotTabButtons();
       nnPersistPdfSessionMeta();
+      var slotForCache = pdfSlots[pdfActiveSlot];
+      if (slotForCache && slotForCache.fileId) {
+        nnPdfCacheSaveFile(slotForCache).catch(function (e) {
+          console.warn('savePdfSlot cache', e);
+        });
+      }
     }
 
     async function nnClearViewerForEmptySlot() {
@@ -7385,7 +7566,7 @@
             var annRes = await nnLoadAnnotationsForCurrentFile();
             if (restoreGen !== __pdfLoadGeneration) return;
             if (annRes && annRes.success && annRes.data) nnApplySharedAnnotationData(annRes.data);
-            var savedLocalMemo = localStorage.getItem('local_memo_' + fileName.replace(/\.[^/.]+$/, ''));
+            var savedLocalMemo = nnReadLocalDraft(s.fileId, fileName.replace(/\.[^/.]+$/, ''));
             if (savedLocalMemo) nnApplyLocalMemoPayload(savedLocalMemo);
           }
           savePdfSlotFromGlobals();
@@ -7519,6 +7700,22 @@
       window.addEventListener('keydown', nnOnKeyDownTextSelect);
       nnPdfAnnRefreshUndoUi();
       applyRoleMeet();
+      window.addEventListener('beforeunload', function () {
+        if (__nnDraftSaveTimer) {
+          clearTimeout(__nnDraftSaveTimer);
+          __nnDraftSaveTimer = null;
+        }
+        if (currentFileId) nnFlushDraftCacheNow();
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden' && currentFileId) {
+          if (__nnDraftSaveTimer) {
+            clearTimeout(__nnDraftSaveTimer);
+            __nnDraftSaveTimer = null;
+          }
+          nnFlushDraftCacheNow();
+        }
+      });
       // サーバー応答を待たずに前回のフォルダツリー/クイックアクセスを即時描画しておく
       try {
         nnHydrateTreeFromCache();
@@ -9228,7 +9425,10 @@
       if (currentUserRole === 'presenter') {
         var hasS = nnHasSharedContentToSave();
         var hasL = nnHasLocalContentToSave();
-        if (!hasS && !hasL) return;
+        if (!hasS && !hasL) {
+          nnScheduleDraftCacheSave();
+          return;
+        }
         if (hasS) {
           if (!silent) statusDiv.textContent = '保存中...';
           google.script.run
@@ -9238,15 +9438,16 @@
             .saveAnnotation(currentFileId, nnSerializeSharedAnnotation());
         }
         if (hasL) {
-          localStorage.setItem('local_memo_' + baseName, nnSerializeLocalMemo());
+          nnWriteLocalDraft(currentFileId, baseName);
           if (!silent && !hasS) statusDiv.textContent = 'メモ保存完了';
         }
       } else {
-        if (!nnHasLocalContentToSave()) return;
-        var jsonL = nnSerializeLocalMemo();
-        localStorage.setItem('local_memo_' + baseName, jsonL);
-        if (!silent) statusDiv.textContent = 'メモ保存完了';
+        if (nnHasLocalContentToSave()) {
+          nnWriteLocalDraft(currentFileId, baseName);
+          if (!silent) statusDiv.textContent = 'メモ保存完了';
+        }
       }
+      nnScheduleDraftCacheSave();
     }
 
     function loadSelectedFile(goToLastPage, silent, fromDropdown) {
@@ -9341,7 +9542,7 @@
                 currentPageNum = Math.min(Math.max(1, currentPageNum), totalPages);
               }
 
-              var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
+              var savedLocalMemo = nnReadLocalDraft(currentFileId, baseName);
 
               var maxPageGuess = fileType === 'pdf' ? pdfDocJs.numPages : totalPages;
               if (goToLastPage) {
@@ -9529,7 +9730,7 @@
           pdfDocJs = await pdfjsLib.getDocument({ data: bytes }).promise;
           if (loadGenB64 !== __pdfLoadGeneration) return;
           var physPages2 = pdfDocJs.numPages;
-          var savedLocalMemo = localStorage.getItem('local_memo_' + baseName);
+          var savedLocalMemo = nnReadLocalDraft(currentFileId, baseName);
           google.script.run
             .withSuccessHandler(async function (res) {
               if (loadGenB64 !== __pdfLoadGeneration) return;
@@ -9606,8 +9807,13 @@
     }
 
     function startupChoosePdfWork() {
-      nnResumePdfWriting().then(function (ok) {
-        if (!ok) showHomeMeet();
+      var card = document.getElementById('nn-su-pdf-work');
+      if (card) card.classList.add('nn-su-loading');
+      nnAwaitStartupWarm().finally(function () {
+        if (card) card.classList.remove('nn-su-loading');
+        nnResumePdfWriting().then(function (ok) {
+          if (!ok) showHomeMeet();
+        });
       });
     }
 
@@ -9630,7 +9836,9 @@
 
     /** ホームヘッダーから PDF 書き込み画面へ（前回のタブ／ファイルがあれば開く） */
     function meetGoPdfFromHome() {
-      nnResumePdfWriting();
+      nnAwaitStartupWarm().finally(function () {
+        nnResumePdfWriting();
+      });
     }
     function meetGoTaskFromHome() {
       hideStartupGate();
@@ -10005,6 +10213,11 @@
 
     function saveToServer() {
       if (!fileName) return alert('ファイルが開かれていません。');
+      if (__nnDraftSaveTimer) {
+        clearTimeout(__nnDraftSaveTimer);
+        __nnDraftSaveTimer = null;
+      }
+      nnFlushDraftCacheNow();
       autoSaveCurrent(false);
       if (!currentFileId) return;
       if (typeof google === 'undefined' || !google.script || !google.script.run) {
