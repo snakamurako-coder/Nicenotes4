@@ -2644,6 +2644,7 @@
 
     function nnClearTextSelection() {
       nnCommitActiveTextEdit();
+      nnTbHistBranch = null;
       nnHideTextInspector();
       nnSelectedTextRef = null;
       nnTextMove = null;
@@ -2671,6 +2672,9 @@
         nnFmEnsureLabelLoaded(nnFmGetLabel(hit.box), function () {
           nnFmSyncFlipMemoChrome();
           redraw();
+          if (!nnInspectorPinned && nnSelectedTextRef && nnSelectedTextRef.box) {
+            nnPositionTextInspector(nnSelectedTextRef.box);
+          }
         });
       } else {
         nnSyncTextBoxChrome();
@@ -3062,6 +3066,14 @@
       }
       if (field && st && !nnTextEditActive) {
         field.value = nnFmGetActiveMemoText(label);
+      }
+      if (!nnInspectorPinned) {
+        var insFm = document.getElementById('nn-text-inspector');
+        if (insFm && insFm.classList.contains('nn-show')) {
+          requestAnimationFrame(function () {
+            if (nnSelectedTextRef && nnSelectedTextRef.box) nnPositionTextInspector(nnSelectedTextRef.box);
+          });
+        }
       }
     }
 
@@ -3990,7 +4002,7 @@
       if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
       var insG = document.getElementById('nn-text-inspector');
       if (insG && insG.dataset.nnInspectorApplying === '1') return;
-      if (nnTbHistBranch !== 'format') {
+      if (nnTbHistBranch !== 'format' && nnTbHistBranch !== 'text-session') {
         nnPdfAnnCheckpointBeforeChange();
         nnTbHistBranch = 'format';
       }
@@ -4052,6 +4064,74 @@
       );
     }
 
+    function nnInspectorOverlapsAnyRegion(insLeft, insTop, insW, insH, regions, margin) {
+      margin = margin != null ? margin : 8;
+      for (var i = 0; i < regions.length; i++) {
+        var rg = regions[i];
+        if (
+          nnInspectorOverlapsBox(insLeft, insTop, insW, insH, rg.left, rg.top, rg.width, rg.height, margin)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /** 書式パレットが避ける領域（テキスト框・グリップ・フリップメモのタブ/備考/ナビ）をシェル相対で返す */
+    function nnGetTextInspectorAvoidRegions(box) {
+      var regions = [];
+      var shell = document.getElementById('viewer-shell');
+      var sr = nnBoxToScreenRect(box);
+      if (!shell || !sr) return regions;
+      var shellR = shell.getBoundingClientRect();
+      var relL = sr.left - shellR.left;
+      var relT = sr.top - shellR.top;
+      var gripH = 20;
+      var pad = 8;
+      regions.push({
+        left: relL - pad,
+        top: relT - pad,
+        width: sr.width + pad * 2,
+        height: sr.height + gripH + pad * 2,
+      });
+      if (!nnFmIsFlipMemoBox(box)) return regions;
+      var chrome = document.getElementById('nn-text-box-chrome');
+      var fmActive =
+        chrome &&
+        chrome.classList.contains('nn-show') &&
+        chrome.classList.contains('nn-flip-memo-active');
+      if (fmActive) {
+        ['nn-flip-memo-toolbar', 'nn-flip-memo-nav', 'nn-text-box-chrome'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (!el || !el.offsetParent) return;
+          var r = el.getBoundingClientRect();
+          if (!r.width && !r.height) return;
+          regions.push({
+            left: r.left - shellR.left - pad,
+            top: r.top - shellR.top - pad,
+            width: r.width + pad * 2,
+            height: r.height + pad * 2,
+          });
+        });
+      } else {
+        var estToolbar = 54;
+        var estNav = 38;
+        regions.push({
+          left: relL - pad,
+          top: relT - estToolbar - pad,
+          width: sr.width + pad * 2,
+          height: estToolbar + pad,
+        });
+        regions.push({
+          left: relL - pad,
+          top: relT + sr.height + gripH + pad,
+          width: sr.width + pad * 2,
+          height: estNav + pad,
+        });
+      }
+      return regions;
+    }
+
     function nnPositionTextInspector(box) {
       var ins = document.getElementById('nn-text-inspector');
       var shell = document.getElementById('viewer-shell');
@@ -4066,20 +4146,20 @@
       var shellR = shell.getBoundingClientRect();
       if (!sr) return;
       var margin = 10;
-      var gripH = 20;
-      var fmExtra = nnFmIsFlipMemoBox(box) ? 56 : 0;
       var bw = ins.offsetWidth || 220;
       var bh = ins.offsetHeight || 200;
       var relL = sr.left - shellR.left;
       var relT = sr.top - shellR.top;
-      var boxH = sr.height + gripH + fmExtra;
+      var avoidRegions = nnGetTextInspectorAvoidRegions(box);
       var candidates = [
-        { left: relL, top: relT + boxH + margin, name: 'below' },
         { left: relL + sr.width + margin, top: relT, name: 'right' },
         { left: relL - bw - margin, top: relT, name: 'left' },
+        { left: margin, top: margin, name: 'corner-tl' },
+        { left: shell.clientWidth - bw - margin, top: margin, name: 'corner-tr' },
+        { left: margin, top: shell.clientHeight - bh - margin, name: 'corner-bl' },
+        { left: shell.clientWidth - bw - margin, top: shell.clientHeight - bh - margin, name: 'corner-br' },
         { left: relL, top: relT - bh - margin, name: 'above' },
-        { left: relL + sr.width + margin, top: relT + boxH + margin, name: 'br' },
-        { left: margin, top: margin, name: 'corner' },
+        { left: relL, top: relT + sr.height + 20 + margin, name: 'below' },
       ];
       function fitsShell(c) {
         return (
@@ -4092,10 +4172,7 @@
       var pick = null;
       for (var i = 0; i < candidates.length; i++) {
         var c = candidates[i];
-        if (
-          !nnInspectorOverlapsBox(c.left, c.top, bw, bh, relL, relT, sr.width, boxH, margin) &&
-          fitsShell(c)
-        ) {
+        if (!nnInspectorOverlapsAnyRegion(c.left, c.top, bw, bh, avoidRegions, margin) && fitsShell(c)) {
           pick = c;
           break;
         }
@@ -4108,7 +4185,7 @@
           }
         }
       }
-      if (!pick) pick = { left: margin, top: Math.max(margin, relT + boxH + margin) };
+      if (!pick) pick = { left: margin, top: margin };
       var cl = nnClampInspectorInShell(ins, pick.left, pick.top);
       ins.style.position = 'absolute';
       ins.style.left = cl.left + 'px';
@@ -4193,8 +4270,8 @@
       if (!nnSelectedTextRef || !nnSelectedTextRef.box) return;
       var field = document.getElementById('nn-text-edit-field');
       if (!field) return;
+      nnTextBeginEditSession();
       nnTextEditActive = true;
-      nnTbHistBranch = null;
       field.readOnly = false;
       if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
         field.value = nnFmGetActiveMemoText(nnFmGetLabel(nnSelectedTextRef.box));
@@ -4243,6 +4320,7 @@
       nnSelectTextBox({ box: tb, layer: layer, index: arr.length - 1, sk: sk });
       nnBumpStrokeTime();
       autoSaveCurrent(true);
+      nnTbHistBranch = 'text-session';
       nnOpenTextEditOverlay();
       redraw();
     }
@@ -4450,8 +4528,7 @@
         });
         field.addEventListener('beforeinput', function (ev) {
           if (!nnTextEditActive || !nnSelectedTextRef) return;
-          var br = nnClassifyTbBeforeInputBranch(ev.inputType || '');
-          nnTextEnsureBranchCheckpoint(br);
+          nnTextBeginEditSession();
         });
         function nnSyncEditingTextFromField() {
           if (!nnTextEditActive || !nnSelectedTextRef || !nnSelectedTextRef.box) return;
@@ -6587,6 +6664,7 @@
         ss: nnSafeJsonClone(sharedStrokesByPage),
         lt: nnSafeJsonClone(localTextByPage),
         st: nnSafeJsonClone(sharedTextByPage),
+        fm: nnSafeJsonClone(fmLabelState),
       };
     }
 
@@ -6663,10 +6741,22 @@
       sharedStrokesByPage = nnSafeJsonClone(s.ss);
       localTextByPage = nnSafeJsonClone(s.lt);
       sharedTextByPage = nnSafeJsonClone(s.st);
+      if (s.fm) {
+        fmLabelState = nnSafeJsonClone(s.fm);
+        Object.keys(fmLabelState).forEach(function (label) {
+          nnFmSyncAllBoxesForLabel(label);
+        });
+      }
       nnPdfAnnRepairSelectionAfterRestore();
-      if (nnTextEditActive && nnSelectedTextRef && nnSelectedTextRef.box) {
-        var f = document.getElementById('nn-text-edit-field');
-        if (f) f.value = nnSelectedTextRef.box.text != null ? String(nnSelectedTextRef.box.text) : '';
+      var f = document.getElementById('nn-text-edit-field');
+      if (nnSelectedTextRef && nnSelectedTextRef.box && f) {
+        if (nnFmIsFlipMemoBox(nnSelectedTextRef.box)) {
+          f.value = nnFmGetActiveMemoText(nnFmGetLabel(nnSelectedTextRef.box));
+        } else {
+          f.value = nnSelectedTextRef.box.text != null ? String(nnSelectedTextRef.box.text) : '';
+        }
+      } else if (nnTextEditActive && f) {
+        f.value = '';
       }
       redraw();
       nnSyncTextBoxChrome();
@@ -6704,13 +6794,17 @@
       return 'insert';
     }
 
-    /** テキスト框: 入力系のグループ変更時だけ undo チェックポイント（連続入力・連続削除は1手）。 */
+    /** テキスト框の編集セッション開始時に1回だけ undo チェックポイント（編集終了＝フォーカスが外れるまで1手）。 */
+    function nnTextBeginEditSession() {
+      if (!currentFileId || nnTbHistBranch === 'text-session') return;
+      nnPdfAnnCheckpointBeforeChange();
+      nnTbHistBranch = 'text-session';
+    }
+
+    /** @deprecated 連続入力は text-session で1手にまとめる */
     function nnTextEnsureBranchCheckpoint(newBranch) {
       if (!currentFileId || !nnTextEditActive) return;
-      if (nnTbHistBranch !== newBranch) {
-        nnPdfAnnCheckpointBeforeChange();
-        nnTbHistBranch = newBranch;
-      }
+      nnTextBeginEditSession();
     }
 
     function nnPdfSlotBaseName(name) {
