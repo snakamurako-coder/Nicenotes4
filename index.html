@@ -4801,11 +4801,19 @@
       }
       var shell = document.getElementById('viewer-shell');
       if (shell && shell.classList.contains('nn-show')) {
-        if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight' || ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
           var ae = document.activeElement;
           var tag = ae && ae.tagName ? ae.tagName : '';
           if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !(ae && ae.isContentEditable)) {
-            changePage(ev.key === 'ArrowLeft' ? -1 : 1);
+            var delta =
+              ev.key === 'ArrowLeft' ? -1 : ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowUp' ? -10 : 10;
+            if (delta === -10 || delta === 10) {
+              // ±10 は先頭/最終ページで止まるよう差分をクランプする
+              var tpKey = typeof totalPages === 'number' && totalPages > 0 ? totalPages : 1;
+              var cpKey = typeof currentPageNum === 'number' && currentPageNum > 0 ? currentPageNum : 1;
+              delta = Math.min(Math.max(1, cpKey + delta), tpKey) - cpKey;
+            }
+            if (delta !== 0) changePage(delta);
             ev.preventDefault();
             return;
           }
@@ -5610,12 +5618,13 @@
       return closest[0].edge;
     }
 
-    function nnClampPaletteInShell(pal) {
+    function nnClampPaletteInShell(pal, pad) {
       var shell = document.getElementById('viewer-shell');
       if (!pal || !shell) return;
       if (pal.classList.contains('nn-palette-docked')) return;
       if (pal.classList.contains('nn-palette-minimized')) return;
-      var pad = 8;
+      // ドラッグ中は pad=0 で呼び、枠を内枠に密着できるようにする（6px ドック判定のため）
+      pad = pad == null ? 8 : pad;
       var w = pal.offsetWidth;
       var h = pal.offsetHeight;
       var maxL = Math.max(pad, shell.clientWidth - w - pad);
@@ -5806,11 +5815,11 @@
         function nnPaletteDragMove(e) {
           if (!drag || e.pointerId !== drag.pid) return;
           e.preventDefault();
-          var left = drag.startPalLeft + (e.clientX - drag.startX);
-          var top = drag.startPalTop + (e.clientY - drag.startY);
-          pal.style.left = left + 'px';
-          pal.style.top = top + 'px';
-          nnClampPaletteInShell(pal);
+          // カーソル位置を基準に、つかんだ点がカーソル直下に来るよう配置する
+          var shellRect = shell.getBoundingClientRect();
+          pal.style.left = e.clientX - shellRect.left - drag.grabOffX + 'px';
+          pal.style.top = e.clientY - shellRect.top - drag.grabOffY + 'px';
+          nnClampPaletteInShell(pal, 0);
           var edge = nnPaletteDockEdgeByProximity(pal, shell);
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.toggle('nn-dock-drag-over', edge === k);
@@ -5825,16 +5834,8 @@
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.remove('nn-dock-drag-over');
           });
-          if (drag.widthLocked) pal.style.width = '';
           if (edge) dockTo(edge);
-          else {
-            if (drag.widthLocked) {
-              var shellRectEnd = shell.getBoundingClientRect();
-              pal.style.left = e.clientX - shellRectEnd.left - drag.grabPalOffX + 'px';
-              pal.style.top = e.clientY - shellRectEnd.top - drag.grabPalOffY + 'px';
-            }
-            nnClampPaletteInShell(pal);
-          }
+          else nnClampPaletteInShell(pal, 0);
           nnRefreshTextSelectionChromeLayout();
           nnSavePaletteState();
           drag = null;
@@ -5844,32 +5845,34 @@
           } catch (err) {}
         }
         handle.addEventListener('pointerdown', function (e) {
-          if (e.button !== 0) return;
+          if (e.button !== 0 && e.pointerType === 'mouse') return;
           if (e.target.closest('.nn-palette-min-btn')) return;
           e.preventDefault();
           e.stopPropagation();
           var wasDocked = pal.classList.contains('nn-palette-docked');
-          var preRect = wasDocked ? pal.getBoundingClientRect() : null;
           if (wasDocked) undock();
           pal.style.position = 'absolute';
-          if (wasDocked && preRect && preRect.width > 0) {
-            pal.style.width = preRect.width + 'px';
-          }
           var shellRect = shell.getBoundingClientRect();
+          // undock 直後に実寸を測る（docked時の全幅→フロート幅280pxへの変化を反映）
           var rect = pal.getBoundingClientRect();
-          var startPalLeft = rect.left - shellRect.left;
-          var startPalTop = rect.top - shellRect.top;
-          pal.style.left = startPalLeft + 'px';
-          pal.style.top = startPalTop + 'px';
+          var grabOffX;
+          var grabOffY;
+          if (wasDocked) {
+            // ドック解除で幅が大きく変わるため、つかみ点はヘッダー中央に取り直す
+            grabOffX = rect.width / 2;
+            grabOffY = 12;
+            pal.style.left = e.clientX - shellRect.left - grabOffX + 'px';
+            pal.style.top = e.clientY - shellRect.top - grabOffY + 'px';
+          } else {
+            grabOffX = e.clientX - rect.left;
+            grabOffY = e.clientY - rect.top;
+            pal.style.left = rect.left - shellRect.left + 'px';
+            pal.style.top = rect.top - shellRect.top + 'px';
+          }
           drag = {
             pid: e.pointerId,
-            startX: e.clientX,
-            startY: e.clientY,
-            startPalLeft: startPalLeft,
-            startPalTop: startPalTop,
-            widthLocked: wasDocked,
-            grabPalOffX: e.clientX - rect.left,
-            grabPalOffY: e.clientY - rect.top,
+            grabOffX: grabOffX,
+            grabOffY: grabOffY,
           };
           nnBeginGripDrag();
           try {
