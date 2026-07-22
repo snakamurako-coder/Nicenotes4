@@ -5565,73 +5565,49 @@
 
     var NN_PALETTE_DOCK_KEY = 'nn_palette_dock_v2';
     var nnPaletteDockToEdge = null;
-    var NN_DOCK_ZONE_DEPTH = 48;
-    var NN_DOCK_SIDE_WIDTH = 56;
+    var NN_DOCK_GAP_PX = 6;
 
-    function nnRectsOverlap(a, b) {
-      if (!a || !b) return false;
-      return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
-    }
-
-    function nnRectOverlapArea(a, b) {
-      if (!nnRectsOverlap(a, b)) return 0;
-      var x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
-      var y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-      return Math.max(0, x) * Math.max(0, y);
-    }
-
-    /** ドックスロット（未表示時は辺の予約帯）の矩形。パレットとの重なり判定に使う */
-    function nnGetDockZoneRect(edge, shell, slots) {
-      var slot = slots[edge];
-      if (slot && slot.classList.contains('nn-dock-active')) {
-        return slot.getBoundingClientRect();
-      }
+    /** viewer-shell 内枠とパレット外枠の各辺の隙間（px） */
+    function nnPaletteEdgeGaps(pal, shell) {
+      var pr = pal.getBoundingClientRect();
       var sr = shell.getBoundingClientRect();
-      var middle = shell.querySelector('.nn-viewer-middle');
-      var mr = middle ? middle.getBoundingClientRect() : sr;
-      if (edge === 'top') {
-        return { left: sr.left, top: sr.top, right: sr.right, bottom: sr.top + NN_DOCK_ZONE_DEPTH };
-      }
-      if (edge === 'bottom') {
-        return {
-          left: sr.left,
-          top: sr.bottom - NN_DOCK_ZONE_DEPTH,
-          right: sr.right,
-          bottom: sr.bottom,
-        };
-      }
-      if (edge === 'left') {
-        return { left: mr.left, top: mr.top, right: mr.left + NN_DOCK_SIDE_WIDTH, bottom: mr.bottom };
-      }
-      if (edge === 'right') {
-        return {
-          left: mr.right - NN_DOCK_SIDE_WIDTH,
-          top: mr.top,
-          right: mr.right,
-          bottom: mr.bottom,
-        };
-      }
-      return null;
+      return {
+        top: pr.top - sr.top,
+        bottom: sr.bottom - pr.bottom,
+        left: pr.left - sr.left,
+        right: sr.right - pr.right,
+      };
     }
 
-    /** パレット枠とドック枠が実際に重なっている辺を返す（重なり面積最大） */
-    function nnPaletteDockEdgeByOverlap(pal, shell, slots) {
-      if (!pal || !shell) return null;
+    /**
+     * 内枠とパレット外枠が NN_DOCK_GAP_PX 以内の辺をドック候補とする。
+     * 四隅では隙間がより小さい辺を採用。同値なら横（top/bottom）優先。
+     */
+    function nnPaletteDockEdgeByProximity(pal, shell) {
+      if (!pal || !shell || pal.classList.contains('nn-palette-minimized')) return null;
       var pr = pal.getBoundingClientRect();
       if (!pr.width && !pr.height) return null;
+      var gaps = nnPaletteEdgeGaps(pal, shell);
       var edges = ['top', 'bottom', 'left', 'right'];
-      var best = null;
-      var bestArea = 0;
+      var eligible = [];
       for (var i = 0; i < edges.length; i++) {
-        var zr = nnGetDockZoneRect(edges[i], shell, slots);
-        if (!zr) continue;
-        var area = nnRectOverlapArea(pr, zr);
-        if (area > bestArea) {
-          bestArea = area;
-          best = edges[i];
-        }
+        var edge = edges[i];
+        var g = gaps[edge];
+        if (g <= NN_DOCK_GAP_PX && g >= -NN_DOCK_GAP_PX) eligible.push({ edge: edge, gap: g });
       }
-      return bestArea > 0 ? best : null;
+      if (!eligible.length) return null;
+      var minGap = eligible[0].gap;
+      for (var j = 1; j < eligible.length; j++) {
+        if (eligible[j].gap < minGap) minGap = eligible[j].gap;
+      }
+      var closest = eligible.filter(function (c) {
+        return c.gap === minGap;
+      });
+      var horiz = closest.filter(function (c) {
+        return c.edge === 'top' || c.edge === 'bottom';
+      });
+      if (horiz.length) return horiz[0].edge;
+      return closest[0].edge;
     }
 
     function nnClampPaletteInShell(pal) {
@@ -5827,49 +5803,38 @@
 
       var drag = null;
       if (handle) {
-        handle.addEventListener('pointerdown', function (e) {
-          if (e.button !== 0) return;
-          if (e.target.closest('.nn-palette-min-btn')) return;
-          e.preventDefault();
-          e.stopPropagation();
-          var wasDocked = pal.classList.contains('nn-palette-docked');
-          if (wasDocked) undock();
-          pal.style.position = 'absolute';
-          var shellRect = shell.getBoundingClientRect();
-          var rect = pal.getBoundingClientRect();
-          var sl = rect.left - shellRect.left;
-          var st = rect.top - shellRect.top;
-          pal.style.left = sl + 'px';
-          pal.style.top = st + 'px';
-          drag = {
-            pid: e.pointerId,
-            grabOffX: e.clientX - rect.left,
-            grabOffY: e.clientY - rect.top,
-          };
-          nnBeginGripDrag();
-          handle.setPointerCapture(e.pointerId);
-        });
-        handle.addEventListener('pointermove', function (e) {
+        function nnPaletteDragMove(e) {
           if (!drag || e.pointerId !== drag.pid) return;
-          var shellRect = shell.getBoundingClientRect();
-          var left = e.clientX - shellRect.left - drag.grabOffX;
-          var top = e.clientY - shellRect.top - drag.grabOffY;
+          e.preventDefault();
+          var left = drag.startPalLeft + (e.clientX - drag.startX);
+          var top = drag.startPalTop + (e.clientY - drag.startY);
           pal.style.left = left + 'px';
           pal.style.top = top + 'px';
           nnClampPaletteInShell(pal);
-          var edge = nnPaletteDockEdgeByOverlap(pal, shell, slots);
+          var edge = nnPaletteDockEdgeByProximity(pal, shell);
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.toggle('nn-dock-drag-over', edge === k);
           });
-        });
-        function endDrag(e) {
+        }
+        function nnPaletteDragEnd(e) {
           if (!drag || e.pointerId !== drag.pid) return;
-          var edge = nnPaletteDockEdgeByOverlap(pal, shell, slots);
+          window.removeEventListener('pointermove', nnPaletteDragMove, true);
+          window.removeEventListener('pointerup', nnPaletteDragEnd, true);
+          window.removeEventListener('pointercancel', nnPaletteDragEnd, true);
+          var edge = nnPaletteDockEdgeByProximity(pal, shell);
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.remove('nn-dock-drag-over');
           });
+          if (drag.widthLocked) pal.style.width = '';
           if (edge) dockTo(edge);
-          else nnClampPaletteInShell(pal);
+          else {
+            if (drag.widthLocked) {
+              var shellRectEnd = shell.getBoundingClientRect();
+              pal.style.left = e.clientX - shellRectEnd.left - drag.grabPalOffX + 'px';
+              pal.style.top = e.clientY - shellRectEnd.top - drag.grabPalOffY + 'px';
+            }
+            nnClampPaletteInShell(pal);
+          }
           nnRefreshTextSelectionChromeLayout();
           nnSavePaletteState();
           drag = null;
@@ -5878,8 +5843,42 @@
             handle.releasePointerCapture(e.pointerId);
           } catch (err) {}
         }
-        handle.addEventListener('pointerup', endDrag);
-        handle.addEventListener('pointercancel', endDrag);
+        handle.addEventListener('pointerdown', function (e) {
+          if (e.button !== 0) return;
+          if (e.target.closest('.nn-palette-min-btn')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          var wasDocked = pal.classList.contains('nn-palette-docked');
+          var preRect = wasDocked ? pal.getBoundingClientRect() : null;
+          if (wasDocked) undock();
+          pal.style.position = 'absolute';
+          if (wasDocked && preRect && preRect.width > 0) {
+            pal.style.width = preRect.width + 'px';
+          }
+          var shellRect = shell.getBoundingClientRect();
+          var rect = pal.getBoundingClientRect();
+          var startPalLeft = rect.left - shellRect.left;
+          var startPalTop = rect.top - shellRect.top;
+          pal.style.left = startPalLeft + 'px';
+          pal.style.top = startPalTop + 'px';
+          drag = {
+            pid: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            startPalLeft: startPalLeft,
+            startPalTop: startPalTop,
+            widthLocked: wasDocked,
+            grabPalOffX: e.clientX - rect.left,
+            grabPalOffY: e.clientY - rect.top,
+          };
+          nnBeginGripDrag();
+          try {
+            handle.setPointerCapture(e.pointerId);
+          } catch (errCap) {}
+          window.addEventListener('pointermove', nnPaletteDragMove, { capture: true, passive: false });
+          window.addEventListener('pointerup', nnPaletteDragEnd, true);
+          window.addEventListener('pointercancel', nnPaletteDragEnd, true);
+        });
       }
 
       var saved = null;
