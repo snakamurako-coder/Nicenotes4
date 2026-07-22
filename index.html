@@ -4799,6 +4799,18 @@
           return;
         }
       }
+      var shell = document.getElementById('viewer-shell');
+      if (shell && shell.classList.contains('nn-show')) {
+        if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+          var ae = document.activeElement;
+          var tag = ae && ae.tagName ? ae.tagName : '';
+          if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !(ae && ae.isContentEditable)) {
+            changePage(ev.key === 'ArrowLeft' ? -1 : 1);
+            ev.preventDefault();
+            return;
+          }
+        }
+      }
       if (ev.key !== 'Delete' && ev.key !== 'Backspace') return;
       if (!nnSelectedTextRef || nnTextEditActive) return;
       nnDeleteSelectedTextBox();
@@ -5434,7 +5446,7 @@
       else if (viewerContainer) viewerContainer.style.display = 'block';
       var pal = nnGetToolsPalette();
       if (pal && !pal.classList.contains('nn-palette-minimized')) {
-        if (!nnEnsureToolsPaletteBottomDock(pal)) nnClampPaletteInShell(pal);
+        nnClampPaletteInShell(pal);
       }
       nnPositionPaletteFab();
       nnPdfAnnRefreshUndoUi();
@@ -5553,27 +5565,76 @@
 
     var NN_PALETTE_DOCK_KEY = 'nn_palette_dock_v2';
     var nnPaletteDockToEdge = null;
+    var NN_DOCK_ZONE_DEPTH = 48;
+    var NN_DOCK_SIDE_WIDTH = 56;
 
-    function nnEnsureToolsPaletteBottomDock(pal) {
-      if (!pal || !nnPaletteDockToEdge) return false;
-      if (pal.classList.contains('nn-palette-minimized') || pal.classList.contains('nn-palette-docked')) return false;
-      var shell = document.getElementById('viewer-shell');
-      if (!shell || !shell.classList.contains('nn-show')) return false;
-      var shellR = shell.getBoundingClientRect();
-      var palR = pal.getBoundingClientRect();
-      if (!palR.width && !palR.height) return false;
-      var bottomGap = shellR.bottom - palR.bottom;
-      var inBottomBand =
-        bottomGap < 64 ||
-        palR.top >= shellR.top + shellR.height * 0.58 ||
-        parseFloat(pal.style.top) >= shell.clientHeight * 0.58;
-      if (!inBottomBand) return false;
-      nnPaletteDockToEdge('bottom');
-      nnSavePaletteState();
-      return true;
+    function nnRectsOverlap(a, b) {
+      if (!a || !b) return false;
+      return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
     }
 
-    function nnClampPaletteInShell(pal, skipAutoDock) {
+    function nnRectOverlapArea(a, b) {
+      if (!nnRectsOverlap(a, b)) return 0;
+      var x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      var y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return Math.max(0, x) * Math.max(0, y);
+    }
+
+    /** ドックスロット（未表示時は辺の予約帯）の矩形。パレットとの重なり判定に使う */
+    function nnGetDockZoneRect(edge, shell, slots) {
+      var slot = slots[edge];
+      if (slot && slot.classList.contains('nn-dock-active')) {
+        return slot.getBoundingClientRect();
+      }
+      var sr = shell.getBoundingClientRect();
+      var middle = shell.querySelector('.nn-viewer-middle');
+      var mr = middle ? middle.getBoundingClientRect() : sr;
+      if (edge === 'top') {
+        return { left: sr.left, top: sr.top, right: sr.right, bottom: sr.top + NN_DOCK_ZONE_DEPTH };
+      }
+      if (edge === 'bottom') {
+        return {
+          left: sr.left,
+          top: sr.bottom - NN_DOCK_ZONE_DEPTH,
+          right: sr.right,
+          bottom: sr.bottom,
+        };
+      }
+      if (edge === 'left') {
+        return { left: mr.left, top: mr.top, right: mr.left + NN_DOCK_SIDE_WIDTH, bottom: mr.bottom };
+      }
+      if (edge === 'right') {
+        return {
+          left: mr.right - NN_DOCK_SIDE_WIDTH,
+          top: mr.top,
+          right: mr.right,
+          bottom: mr.bottom,
+        };
+      }
+      return null;
+    }
+
+    /** パレット枠とドック枠が実際に重なっている辺を返す（重なり面積最大） */
+    function nnPaletteDockEdgeByOverlap(pal, shell, slots) {
+      if (!pal || !shell) return null;
+      var pr = pal.getBoundingClientRect();
+      if (!pr.width && !pr.height) return null;
+      var edges = ['top', 'bottom', 'left', 'right'];
+      var best = null;
+      var bestArea = 0;
+      for (var i = 0; i < edges.length; i++) {
+        var zr = nnGetDockZoneRect(edges[i], shell, slots);
+        if (!zr) continue;
+        var area = nnRectOverlapArea(pr, zr);
+        if (area > bestArea) {
+          bestArea = area;
+          best = edges[i];
+        }
+      }
+      return bestArea > 0 ? best : null;
+    }
+
+    function nnClampPaletteInShell(pal) {
       var shell = document.getElementById('viewer-shell');
       if (!pal || !shell) return;
       if (pal.classList.contains('nn-palette-docked')) return;
@@ -5589,7 +5650,6 @@
       if (isNaN(top)) top = pad;
       pal.style.left = Math.min(Math.max(pad, left), maxL) + 'px';
       pal.style.top = Math.min(Math.max(pad, top), maxT) + 'px';
-      if (!skipAutoDock) nnEnsureToolsPaletteBottomDock(pal);
     }
 
     function nnClampFabInShell(fab) {
@@ -5748,29 +5808,6 @@
         updateSlots();
       }
 
-      function nearestEdge(cx, cy) {
-        var r = shell.getBoundingClientRect();
-        var relY = cy - r.top;
-        var relH = Math.max(r.height, 1);
-        if (relY >= relH * 0.72) return 'bottom';
-        if (relY <= relH * 0.18) return 'top';
-        var dist = {
-          top: cy - r.top,
-          bottom: r.bottom - cy,
-          left: cx - r.left,
-          right: r.right - cx,
-        };
-        var edge = 'bottom';
-        var min = dist.bottom;
-        Object.keys(dist).forEach(function (k) {
-          if (dist[k] < min) {
-            min = dist[k];
-            edge = k;
-          }
-        });
-        return min < 96 ? edge : null;
-      }
-
       nnPaletteDockToEdge = dockTo;
 
       var handle = pal.querySelector('.nn-palette-drag-handle') || pal.querySelector('.nn-float-handle');
@@ -5795,44 +5832,44 @@
           if (e.target.closest('.nn-palette-min-btn')) return;
           e.preventDefault();
           e.stopPropagation();
-          var shellRect = shell.getBoundingClientRect();
           var wasDocked = pal.classList.contains('nn-palette-docked');
-          var rect = pal.getBoundingClientRect();
           if (wasDocked) undock();
           pal.style.position = 'absolute';
+          var shellRect = shell.getBoundingClientRect();
+          var rect = pal.getBoundingClientRect();
           var sl = rect.left - shellRect.left;
           var st = rect.top - shellRect.top;
-          if (wasDocked) {
-            pal.style.left = sl + 'px';
-            pal.style.top = st + 'px';
-          } else {
-            sl = parseFloat(pal.style.left);
-            st = parseFloat(pal.style.top);
-            if (isNaN(sl)) sl = rect.left - shellRect.left;
-            if (isNaN(st)) st = rect.top - shellRect.top;
-          }
-          drag = { pid: e.pointerId, ox: e.clientX, oy: e.clientY, sl: sl, st: st };
+          pal.style.left = sl + 'px';
+          pal.style.top = st + 'px';
+          drag = {
+            pid: e.pointerId,
+            grabOffX: e.clientX - rect.left,
+            grabOffY: e.clientY - rect.top,
+          };
           nnBeginGripDrag();
           handle.setPointerCapture(e.pointerId);
         });
         handle.addEventListener('pointermove', function (e) {
           if (!drag || e.pointerId !== drag.pid) return;
-          pal.style.left = drag.sl + (e.clientX - drag.ox) + 'px';
-          pal.style.top = drag.st + (e.clientY - drag.oy) + 'px';
-          nnClampPaletteInShell(pal, true);
-          var edge = nearestEdge(e.clientX, e.clientY);
+          var shellRect = shell.getBoundingClientRect();
+          var left = e.clientX - shellRect.left - drag.grabOffX;
+          var top = e.clientY - shellRect.top - drag.grabOffY;
+          pal.style.left = left + 'px';
+          pal.style.top = top + 'px';
+          nnClampPaletteInShell(pal);
+          var edge = nnPaletteDockEdgeByOverlap(pal, shell, slots);
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.toggle('nn-dock-drag-over', edge === k);
           });
         });
         function endDrag(e) {
           if (!drag || e.pointerId !== drag.pid) return;
-          var edge = nearestEdge(e.clientX, e.clientY);
+          var edge = nnPaletteDockEdgeByOverlap(pal, shell, slots);
           Object.keys(slots).forEach(function (k) {
             if (slots[k]) slots[k].classList.remove('nn-dock-drag-over');
           });
           if (edge) dockTo(edge);
-          else nnClampPaletteInShell(pal, true);
+          else nnClampPaletteInShell(pal);
           nnRefreshTextSelectionChromeLayout();
           nnSavePaletteState();
           drag = null;
@@ -5868,7 +5905,7 @@
         pal.style.position = 'absolute';
         pal.style.left = cfg.left || '12px';
         pal.style.top = cfg.top || '12px';
-        if (!nnEnsureToolsPaletteBottomDock(pal)) nnClampPaletteInShell(pal);
+        nnClampPaletteInShell(pal);
       } else {
         dockTo('bottom');
       }
